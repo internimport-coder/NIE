@@ -1035,3 +1035,9 @@ tr.ci-row-kurang.ci-low-conf td { background: rgba(220,38,38,.06) !important; }
   outline: none;
   box-shadow: 0 0 0 2px rgba(59,111,232,0.12);
 }
+/* ── Dashboard ────────────────────────────────────────────────── */
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 currentColor; }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}

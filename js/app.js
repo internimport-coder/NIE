@@ -123,7 +123,10 @@ function switchTab(tab) {
 
   // Per-tab actions
   if (tab === 'home') {
+    renderDashboardHeader();
+    renderDashboardAlerts();
     renderShipmentTop5('home-hero', { layout: 'stack', clickable: true });
+    renderDashboardPoSummary();
     renderHomeCalendar();
   } else if (tab === 'shipment') {
     renderShipmentDashboard();
@@ -2035,6 +2038,7 @@ function renderShipmentDashboard() {
       <td>${fmtDate(item.ataWarehouse)}</td>
       <td style="display:flex;gap:6px">
         <button class="btn-detail" onclick="editShipment(${realIdx})"><i class="ti ti-edit"></i> Edit</button>
+        <button class="btn-detail" onclick="openSkExportModal(${realIdx})" title="Export Surat Kuasa ke Word"><i class="ti ti-file-export"></i> Surat Kuasa</button>
         <button class="btn-detail btn-detail-danger" onclick="deleteShipment(${realIdx})"><i class="ti ti-trash"></i></button>
       </td>
     `;
@@ -2048,84 +2052,135 @@ function renderShipmentTop5(containerId, options = {}) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  const top5 = [...MOCK_SHIPMENTS]
-    .map(item => ({ ...item, etaDistance: getDaysUntil(item.ataPort), transit: getDaysBetween(item.etd, item.ataPort) }))
-    .filter(item => item.etaDistance !== null)
-    .sort((a, b) => a.etaDistance - b.etaDistance)
+  const all = [...MOCK_SHIPMENTS]
+    .map(item => ({
+      ...item,
+      daysToPort: getDaysUntil(item.ataPort),
+      daysToWH:   getDaysUntil(item.ataWarehouse),
+      daysToETD:  getDaysUntil(item.etd),
+    }))
+    .sort((a, b) => {
+      // Sort: incoming first (positive days), then already arrived (negative)
+      const da = a.daysToWH ?? 9999;
+      const db = b.daysToWH ?? 9999;
+      return da - db;
+    })
     .slice(0, 5);
 
-  if (!top5.length) { container.innerHTML = ''; return; }
+  if (!all.length) { container.innerHTML = '<div style="padding:24px;color:var(--c-text-hint);text-align:center">Belum ada data shipment.</div>'; return; }
 
-  if (layout === 'stack') {
-    const grid = document.createElement('div');
-    grid.className = 'shipment-stack';
-    top5.forEach((item, i) => {
-      const card = document.createElement('div');
-      card.className = 'shipment-stack-row' + (clickable ? ' clickable' : '');
-      if (clickable) card.setAttribute('onclick', "switchTab('shipment')");
-      card.innerHTML = `
-        <div class="shipment-stack-brand">
-          <span class="shipment-top5-brand">${item.brand}</span>
-          <span class="shipment-stack-container">${item.containerType||'—'}</span>
-          <span class="shipment-stack-rank">#${i+1}</span>
-        </div>
-        <div class="shipment-name" style="margin-bottom:8px;font-size:14px;font-weight:800">${item.shipmentName}</div>
-        <div class="shipment-stack-vessel"><i class="ti ti-ship" style="vertical-align:-2px;margin-right:4px"></i>${item.vessel||'—'}</div>
-        <div class="shipment-stack-dates">
-          <span><i class="ti ti-plane-departure" style="font-size:11px;margin-right:3px;color:var(--c-blue)"></i>ETD: ${fmtDate(item.etd)}</span>
-          <span><i class="ti ti-anchor" style="font-size:11px;margin-right:3px;color:var(--c-orange)"></i>ATA Port: ${fmtDate(item.ataPort)}</span>
-          <span><i class="ti ti-building-warehouse" style="font-size:11px;margin-right:3px;color:var(--c-green)"></i>ATA WH: ${fmtDate(item.ataWarehouse)}</span>
-        </div>
-        <div class="shipment-stack-info" style="font-size:12px;color:var(--c-text-hint);padding:4px 0">
-          <span><i class="ti ti-file-text" style="font-size:11px;margin-right:3px"></i>BL: ${item.noBl||'—'}</span>
-          <span style="margin-left:12px"><i class="ti ti-truck" style="font-size:11px;margin-right:3px"></i>Liner: ${item.linerShipment||'—'}</span>
-        </div>
-        <div class="shipment-stack-countdown">
-          ${item.etaDistance >= 0 ? `<i class="ti ti-clock" style="margin-right:6px"></i>${item.etaDistance} hari lagi` : `<i class="ti ti-check" style="margin-right:6px"></i>Sudah tiba`}
-        </div>
-      `;
-      grid.appendChild(card);
-    });
-    container.innerHTML = '';
-    container.appendChild(grid);
-  } else {
-    const grid = document.createElement('div');
-    grid.className = 'shipment-stack';
-    top5.forEach((item, i) => {
-      const card = document.createElement('div');
-      card.className = 'shipment-stack-row' + (clickable ? ' clickable' : '');
-      card.innerHTML = `
-        <div class="shipment-stack-brand">
-          <span class="shipment-top5-brand">${item.brand}</span>
-          <span class="shipment-stack-container">${item.containerType||'—'}</span>
-          <span class="shipment-stack-rank">#${i+1}</span>
-        </div>
-        <div class="shipment-name" style="margin-bottom:8px;font-size:14px;font-weight:800">${item.shipmentName}</div>
-        <div class="shipment-stack-vessel">${item.vessel||'—'}</div>
-        <div class="shipment-stack-dates">
-          <span>ETD: ${fmtDate(item.etd)}</span>
-          <span>ATA Port: ${fmtDate(item.ataPort)}</span>
-          <span>ATA WH: ${fmtDate(item.ataWarehouse)}</span>
-        </div>
-        <div class="shipment-stack-info" style="font-size:12px;color:var(--c-text-hint);padding:4px 0">
-          <span>BL: ${item.noBl||'—'}</span>
-          <span style="margin-left:12px">Liner: ${item.linerShipment||'—'}</span>
-        </div>
-        <div class="shipment-stack-countdown">
-          ${item.etaDistance >= 0 ? `${item.etaDistance} hari lagi` : 'Sudah tiba'}
-        </div>
-      `;
-      grid.appendChild(card);
-    });
-    container.innerHTML = '';
-    if (top5.length) {
-      const heading = document.createElement('div');
-      heading.className = 'section-heading';
-      heading.innerHTML = '<i class="ti ti-star"></i><span>Top Upcoming Shipments</span>';
-      container.appendChild(heading);
+  // ── Render new dashboard shipment cards ─────────────────────
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:20px';
+
+  all.forEach((item, i) => {
+    const d = item.daysToWH;
+    // Status + urgency
+    let urgency = 'normal', urgencyLabel = '', urgencyColor = '';
+    if (d === null || d === undefined) {
+      urgency = 'unknown'; urgencyLabel = 'Tanggal ?'; urgencyColor = '#94a3b8';
+    } else if (d < 0) {
+      urgency = 'arrived'; urgencyLabel = 'Sudah Tiba'; urgencyColor = '#22c55e';
+    } else if (d === 0) {
+      urgency = 'today'; urgencyLabel = 'Hari Ini!'; urgencyColor = '#f97316';
+    } else if (d <= 3) {
+      urgency = 'urgent'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#ef4444';
+    } else if (d <= 7) {
+      urgency = 'soon'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#f97316';
+    } else {
+      urgency = 'normal'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#3b82f6';
     }
-    container.appendChild(grid);
-  }
+
+    // Timeline progress (ETD → Port → WH)
+    const stages = [
+      { label:'ETD', date: item.etd,          days: item.daysToETD,  icon:'ti-plane-departure', color:'#6366f1' },
+      { label:'Port',date: item.ataPort,       days: item.daysToPort, icon:'ti-anchor',          color:'#f97316' },
+      { label:'WH',  date: item.ataWarehouse,  days: item.daysToWH,   icon:'ti-building-warehouse', color:'#22c55e' },
+    ];
+
+    const timelineHtml = stages.map((s, si) => {
+      const done = s.days !== null && s.days < 0;
+      const active = s.days !== null && s.days >= 0 && (si === 0 || stages[si-1].days < 0);
+      return `
+        <div style="display:flex;align-items:center;gap:0;flex:1;min-width:0">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0">
+            <div style="width:26px;height:26px;border-radius:50%;background:${done?s.color:active?s.color+'22':'rgba(0,0,0,.06)'};border:2px solid ${done||active?s.color:'rgba(0,0,0,.12)'};display:flex;align-items:center;justify-content:center;transition:all .2s">
+              <i class="ti ${s.icon}" style="font-size:12px;color:${done||active?s.color:'#94a3b8'}"></i>
+            </div>
+            <div style="font-size:10px;font-weight:600;color:${done||active?s.color:'#94a3b8'};text-transform:uppercase;letter-spacing:.04em">${s.label}</div>
+            <div style="font-size:10px;color:${done?'#64748b':active?s.color:'#94a3b8'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px;text-align:center">${s.date?fmtDate(s.date):'—'}</div>
+          </div>
+          ${si < stages.length-1 ? `<div style="height:2px;flex:1;background:${done&&stages[si+1]?.days<0?'#e2e8f0':'linear-gradient(90deg,'+s.color+',rgba(0,0,0,.08))'};margin:0 2px;margin-bottom:18px;transition:all .2s;min-width:8px"></div>` : ''}
+        </div>`;
+    }).join('');
+
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background:var(--c-surface);
+      border:0.5px solid ${urgency==='urgent'||urgency==='today'?'rgba(239,68,68,.3)':urgency==='soon'?'rgba(249,115,22,.25)':'var(--c-border)'};
+      border-top: 3px solid ${urgencyColor};
+      border-radius:12px;
+      padding:16px;
+      cursor:${clickable?'pointer':'default'};
+      transition:box-shadow .15s,transform .15s;
+      position:relative;
+      overflow:hidden;
+    `;
+    if (clickable) {
+      card.setAttribute('onclick', "switchTab('shipment')");
+      card.onmouseenter = () => { card.style.boxShadow='0 4px 20px rgba(0,0,0,.1)'; card.style.transform='translateY(-2px)'; };
+      card.onmouseleave = () => { card.style.boxShadow=''; card.style.transform=''; };
+    }
+
+    // Urgency pulse for critical
+    const pulseStyle = (urgency==='urgent'||urgency==='today')
+      ? `position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%;background:${urgencyColor};box-shadow:0 0 0 3px ${urgencyColor}33;animation:pulse 1.5s ease infinite`
+      : '';
+
+    card.innerHTML = `
+      ${pulseStyle ? `<div style="${pulseStyle}"></div>` : ''}
+      <!-- Header -->
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;flex-wrap:wrap">
+            <span style="font-size:13px;font-weight:800;color:var(--c-text-primary);letter-spacing:.01em">${item.brand}</span>
+            <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;background:${item.containerType==='FCL'?'rgba(99,102,241,.12)':'rgba(249,115,22,.12)'};color:${item.containerType==='FCL'?'#6366f1':'#f97316'}">${item.containerType||'—'}</span>
+            <span style="font-size:10px;color:var(--c-text-hint)">#${i+1}</span>
+          </div>
+          <div style="font-size:12px;color:var(--c-text-hint);margin-bottom:2px">${item.shipmentName}</div>
+          <div style="font-size:12px;color:var(--c-text-sub);display:flex;align-items:center;gap:4px">
+            <i class="ti ti-ship" style="font-size:11px"></i>${item.vessel||'—'}
+          </div>
+        </div>
+        <!-- Countdown badge -->
+        <div style="text-align:center;padding:6px 10px;border-radius:8px;background:${urgencyColor}15;border:1px solid ${urgencyColor}30;min-width:64px;flex-shrink:0">
+          <div style="font-size:${d!==null&&d>=0&&d<=99?'18':'14'}px;font-weight:800;color:${urgencyColor};line-height:1.1">${d !== null ? (d < 0 ? '✓' : d) : '?'}</div>
+          <div style="font-size:9px;font-weight:600;color:${urgencyColor};text-transform:uppercase;letter-spacing:.05em;margin-top:1px">${d !== null ? (d < 0 ? 'Tiba' : 'hari') : 'hari'}</div>
+          <div style="font-size:9px;color:${urgencyColor};opacity:.8">ke WH</div>
+        </div>
+      </div>
+
+      <!-- Timeline -->
+      <div style="display:flex;align-items:flex-start;gap:0;margin-bottom:12px;padding:10px 4px 4px;background:var(--c-surface-2,rgba(0,0,0,.025));border-radius:8px">
+        ${timelineHtml}
+      </div>
+
+      <!-- Footer info -->
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--c-text-hint)">
+        <span style="display:flex;align-items:center;gap:4px">
+          <i class="ti ti-file-text" style="font-size:11px"></i>${item.noBl||'—'}
+        </span>
+        <span style="display:flex;align-items:center;gap:4px">
+          <i class="ti ti-truck" style="font-size:11px"></i>${item.linerShipment||'—'}
+        </span>
+      </div>
+    `;
+
+    wrap.appendChild(card);
+  });
+
+  container.innerHTML = '';
+  container.appendChild(wrap);
 }
 
 // ── Calendar with navigation ───────────────────────────────────
@@ -4081,4 +4136,148 @@ async function nieServerSearchAndZip(nies) {
 
   const cnt = zr.headers.get('X-File-Count') || foundSet.size;
   showToast(`✓ ZIP downloaded: ${cnt} file NIE (${zipName})`, 'success');
+}
+// ══════════════════════════════════════════════════════════════
+// DASHBOARD — Header, Alerts, PO Summary
+// ══════════════════════════════════════════════════════════════
+
+function renderDashboardHeader() {
+  const now  = new Date();
+  const hour = now.getHours();
+  const greeting = hour < 11 ? 'Selamat Pagi' : hour < 15 ? 'Selamat Siang' : hour < 18 ? 'Selamat Sore' : 'Selamat Malam';
+  const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const dateStr = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+
+  const greetEl = document.getElementById('dash-greeting');
+  const dateEl  = document.getElementById('dash-date');
+  if (greetEl) greetEl.textContent = `${greeting}, Tim Import! 👋`;
+  if (dateEl)  dateEl.textContent  = dateStr;
+
+  // Update ship count badge
+  const countEl = document.getElementById('dash-ship-count');
+  if (countEl) countEl.textContent = `${MOCK_SHIPMENTS.length} shipment`;
+}
+
+function renderDashboardAlerts() {
+  const el = document.getElementById('dash-alerts');
+  if (!el) return;
+
+  const alerts = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  MOCK_SHIPMENTS.forEach(ship => {
+    const dWH   = getDaysUntil(ship.ataWarehouse);
+    const dPort = getDaysUntil(ship.ataPort);
+
+    if (dWH !== null && dWH >= 0 && dWH <= 3) {
+      alerts.push({
+        type:    dWH === 0 ? 'danger' : 'warning',
+        icon:    'ti-building-warehouse',
+        title:   `${ship.brand} — ${ship.shipmentName}`,
+        msg:     dWH === 0 ? 'Jadwal ATA Warehouse HARI INI!' : `ATA Warehouse dalam ${dWH} hari (${fmtDate(ship.ataWarehouse)})`,
+        action:  "switchTab('shipment')",
+      });
+    } else if (dPort !== null && dPort >= 0 && dPort <= 2) {
+      alerts.push({
+        type:  'info',
+        icon:  'ti-anchor',
+        title: `${ship.brand} — ${ship.shipmentName}`,
+        msg:   dPort === 0 ? 'Jadwal ATA Port HARI INI!' : `ATA Port dalam ${dPort} hari (${fmtDate(ship.ataPort)})`,
+        action: "switchTab('shipment')",
+      });
+    }
+  });
+
+  // PO alerts: belum PIB lebih dari 30 hari
+  MOCK_PO_DATA.forEach(po => {
+    if (po.status === 'belum-pib' && po.poDate) {
+      const daysSincePO = Math.floor((today - new Date(po.poDate)) / 86400000);
+      if (daysSincePO > 30) {
+        alerts.push({
+          type:   'warning',
+          icon:   'ti-file-alert',
+          title:  `PO ${po.poNumber} — ${po.supplierLabel||po.supplier}`,
+          msg:    `Belum ada PIB sejak ${daysSincePO} hari lalu (PO Date: ${fmtDate(po.poDate)})`,
+          action: `switchTab('history')`,
+        });
+      }
+    }
+    if (po.status === 'kurang') {
+      alerts.push({
+        type:  'danger',
+        icon:  'ti-trending-down',
+        title: `Shortage — PO ${po.poNumber}`,
+        msg:   `${po.supplierLabel||po.supplier}: qty di warehouse kurang dari PIB`,
+        action: `showDetail('${po.poNumber}')`,
+      });
+    }
+  });
+
+  if (!alerts.length) {
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(34,197,94,.07);border:0.5px solid rgba(34,197,94,.25);border-radius:10px;font-size:13px;color:#15803d">
+        <i class="ti ti-circle-check" style="font-size:18px"></i>
+        <span>Semua baik — tidak ada alert mendesak hari ini.</span>
+      </div>`;
+    return;
+  }
+
+  const colorMap = {
+    danger:  { bg:'rgba(239,68,68,.08)',  border:'rgba(239,68,68,.25)',  text:'#dc2626', label:'URGENT' },
+    warning: { bg:'rgba(249,115,22,.08)', border:'rgba(249,115,22,.25)', text:'#c2410c', label:'PERHATIAN' },
+    info:    { bg:'rgba(59,130,246,.08)', border:'rgba(59,130,246,.25)', text:'#1d4ed8', label:'INFO' },
+  };
+
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${alerts.slice(0,5).map(a => {
+        const c = colorMap[a.type] || colorMap.info;
+        return `<div onclick="${a.action}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;background:${c.bg};border:0.5px solid ${c.border};border-left:3px solid ${c.text};border-radius:8px;cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.85'" onmouseleave="this.style.opacity='1'">
+          <i class="ti ${a.icon}" style="font-size:18px;color:${c.text};flex-shrink:0"></i>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:1px">
+              <span style="font-size:9px;font-weight:800;letter-spacing:.08em;color:${c.text};background:${c.border};padding:1px 6px;border-radius:3px">${c.label}</span>
+              <span style="font-size:13px;font-weight:600;color:var(--c-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.title}</span>
+            </div>
+            <div style="font-size:12px;color:var(--c-text-hint)">${a.msg}</div>
+          </div>
+          <i class="ti ti-chevron-right" style="color:var(--c-text-hint);flex-shrink:0;font-size:14px"></i>
+        </div>`;
+      }).join('')}
+      ${alerts.length > 5 ? `<div style="text-align:center;font-size:12px;color:var(--c-text-hint);padding:4px">+${alerts.length-5} alert lainnya</div>` : ''}
+    </div>`;
+}
+
+function renderDashboardPoSummary() {
+  const el = document.getElementById('dash-po-summary');
+  if (!el) return;
+
+  const total   = MOCK_PO_DATA.length;
+  const belum   = MOCK_PO_DATA.filter(p=>p.status==='belum-pib').length;
+  const kurang  = MOCK_PO_DATA.filter(p=>p.status==='kurang').length;
+  const match   = MOCK_PO_DATA.filter(p=>p.status==='match').length;
+  const lebih   = MOCK_PO_DATA.filter(p=>p.status==='lebih').length;
+
+  const cards = [
+    { label:'Total PO',   value:total,  color:'#6366f1', bg:'rgba(99,102,241,.08)',  icon:'ti-files',          action:"switchTab('history')" },
+    { label:'Belum PIB',  value:belum,  color:'#94a3b8', bg:'rgba(148,163,184,.1)',   icon:'ti-clock-pause',    action:"switchTab('history')" },
+    { label:'Match ✓',    value:match,  color:'#22c55e', bg:'rgba(34,197,94,.08)',    icon:'ti-circle-check',   action:"switchTab('history')" },
+    { label:'Shortage',   value:kurang, color:'#ef4444', bg:'rgba(239,68,68,.08)',    icon:'ti-trending-down',  action:"switchTab('history')" },
+    { label:'Excess',     value:lebih,  color:'#f97316', bg:'rgba(249,115,22,.08)',   icon:'ti-trending-up',    action:"switchTab('history')" },
+  ];
+
+  el.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:var(--c-text-primary);display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <i class="ti ti-files" style="color:var(--c-blue)"></i> Status Purchase Order
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${cards.map(c => `
+        <div onclick="${c.action}" style="flex:1;min-width:100px;padding:14px 16px;background:${c.bg};border:0.5px solid ${c.color}30;border-radius:10px;cursor:pointer;transition:transform .12s,box-shadow .12s;text-align:center"
+          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,.1)'"
+          onmouseleave="this.style.transform='';this.style.boxShadow=''">
+          <div style="font-size:26px;font-weight:800;color:${c.color};line-height:1.1;margin-bottom:4px">${c.value}</div>
+          <div style="font-size:11px;font-weight:600;color:${c.color};text-transform:uppercase;letter-spacing:.05em;opacity:.85">${c.label}</div>
+        </div>`).join('')}
+    </div>`;
 }
