@@ -149,13 +149,13 @@
     ════════════════════════════════════════════ -->
     <section class="page-body" id="home-panel">
 
-      <!-- ── Dashboard Header ── -->
-      <div id="dash-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
-        <div>
-          <div id="dash-greeting" style="font-size:20px;font-weight:700;color:var(--c-text-primary);margin-bottom:2px"></div>
-          <div id="dash-date" style="font-size:13px;color:var(--c-text-hint)"></div>
+      <!-- ── Dashboard Hero / Greeting ── -->
+      <div id="dash-header" class="dash-hero">
+        <div class="dash-hero-left">
+          <div id="dash-greeting" class="dash-hero-greeting"></div>
+          <div id="dash-date" class="dash-hero-date"><i class="ti ti-calendar-event"></i><span></span></div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="dash-hero-actions">
           <button class="btn-ghost btn-sm" onclick="switchTab('create');clearPibForm();renderItemRows([])">
             <i class="ti ti-file-plus"></i> Buat PO
           </button>
@@ -169,13 +169,21 @@
       </div>
 
       <!-- ── Reminder / Alert Bar ── -->
-      <div id="dash-alerts" style="margin-bottom:20px"></div>
+      <div class="section-heading" style="margin-top:0">
+        <i class="ti ti-bell-ringing"></i><span>Yang Perlu Diperhatikan</span>
+      </div>
+      <div id="dash-alerts" class="dash-alert-list" style="margin-bottom:8px"></div>
+
+      <!-- ── PO Status Summary ── HIDDEN -->
+      <div class="section-heading" style="display:none">
+        <i class="ti ti-chart-donut"></i><span>Ringkasan Status PO</span>
+      </div>
+      <div id="dash-po-summary" style="margin-bottom:8px;display:none"></div>
 
       <!-- ── Shipment Cards ── -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:var(--c-text-primary);display:flex;align-items:center;gap:8px">
-          <i class="ti ti-ship" style="color:var(--c-blue)"></i>
-          Upcoming Shipments
+      <div class="section-heading" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:8px">
+          <i class="ti ti-ship"></i><span>Upcoming Shipments</span>
           <span id="dash-ship-count" class="badge badge-blue" style="font-size:11px"></span>
         </div>
         <button class="btn-ghost btn-sm" onclick="switchTab('shipment')" style="font-size:12px">
@@ -184,15 +192,9 @@
       </div>
       <div id="home-hero"></div>
 
-      <!-- ── PO Status Summary ── -->
-      <div id="dash-po-summary" style="margin:20px 0"></div>
-
       <!-- ── Calendar ── -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:var(--c-text-primary);display:flex;align-items:center;gap:8px">
-          <i class="ti ti-calendar-month" style="color:var(--c-blue)"></i>
-          Shipment Calendar
-        </div>
+      <div class="section-heading">
+        <i class="ti ti-calendar-month"></i><span>Shipment Calendar</span>
       </div>
       <div id="home-calendar"></div>
     </section>
@@ -865,19 +867,61 @@
 
       <!-- KPI Strip -->
       <div class="kpi-strip" style="margin-bottom:16px">
-        <div class="kpi-card"><div class="kpi-value" id="vr-kpi-total">0</div><div class="kpi-label">Total PIB</div></div>
+        <div class="kpi-card"><div class="kpi-value" id="vr-kpi-total">0</div><div class="kpi-label">Total Bukti Bayar</div></div>
         <div class="kpi-card" style="border-left:3px solid #22c55e"><div class="kpi-value" id="vr-kpi-match">0</div><div class="kpi-label">Match</div></div>
-        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="vr-kpi-review">0</div><div class="kpi-label">Need Review</div></div>
-        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="vr-kpi-currency">0</div><div class="kpi-label">Currency Mismatch</div></div>
+        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="vr-kpi-kurang">0</div><div class="kpi-label">Kurang Bayar</div></div>
+        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="vr-kpi-lebih">0</div><div class="kpi-label">Lebih Bayar</div></div>
+      </div>
+
+      <!-- CI Value Master -->
+      <div class="form-card" style="margin-bottom:16px">
+        <div class="form-card-title">
+          <i class="ti ti-file-invoice"></i>
+          <span>Data Nilai CI (Commercial Invoice)</span>
+          <span class="field-hint" style="margin-left:8px">Nilai CI menjadi acuan pembanding bukti pembayaran</span>
+        </div>
+        <div class="form-grid-3">
+          <div class="field-group">
+            <label>Nomor PO <span class="req">*</span></label>
+            <select id="vr-ci-po-select" class="field-input">
+              <option value="">— Pilih PO —</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Nomor CI <span class="req">*</span></label>
+            <input type="text" id="vr-ci-number" placeholder="e.g. CI-IZ-25-09" style="font-family:monospace" />
+          </div>
+          <div class="field-group">
+            <label>Tanggal CI</label>
+            <input type="date" id="vr-ci-date" />
+          </div>
+          <div class="field-group">
+            <label>Currency</label>
+            <input type="text" id="vr-ci-currency" placeholder="USD" style="text-transform:uppercase" />
+          </div>
+          <div class="field-group">
+            <label>Value CI <span class="req">*</span></label>
+            <input type="number" id="vr-ci-value" placeholder="10000" step="0.01" />
+          </div>
+          <div class="field-group" style="display:flex;align-items:flex-end">
+            <button class="btn-primary" style="width:100%" onclick="vrSaveCi()"><i class="ti ti-plus"></i> Tambah / Update CI</button>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table class="data-table">
+            <thead><tr><th>Nomor PO</th><th>Nomor CI</th><th>Tgl CI</th><th class="num">Currency</th><th class="num">Value CI</th><th style="width:70px"></th></tr></thead>
+            <tbody id="vr-ci-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada data CI. Tambahkan di atas.</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Reconciliation Table -->
       <div class="form-card" style="margin-bottom:16px">
         <div class="form-card-title">
           <i class="ti ti-scale"></i>
-          <span>Dashboard Value Reconciliation</span>
+          <span>Dashboard Value Reconciliation — Payment Proof vs CI</span>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" id="vr-search" placeholder="Cari PO / PIB / Vendor…"
+            <input type="text" id="vr-search" placeholder="Cari PO / CI…"
               style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;min-width:180px"
               oninput="vrFilterTable()" />
             <select id="vr-status-filter"
@@ -885,8 +929,10 @@
               onchange="vrFilterStatus()">
               <option value="">Semua Status</option>
               <option value="match">Match</option>
-              <option value="need-review">Need Review</option>
+              <option value="kurang">Kurang Bayar</option>
+              <option value="lebih">Lebih Bayar</option>
               <option value="currency-mismatch">Currency Mismatch</option>
+              <option value="no-ci">CI Tidak Ditemukan</option>
             </select>
           </div>
         </div>
@@ -895,13 +941,12 @@
             <thead>
               <tr>
                 <th>PO Number</th>
-                <th>Vendor</th>
-                <th>Nomor PIB</th>
-                <th>Tgl PIB</th>
-                <th class="num">Cur. PO</th>
-                <th class="num">Cur. PIB</th>
-                <th class="num">Value PO</th>
-                <th class="num">FOB PIB</th>
+                <th>Nomor CI</th>
+                <th>Term</th>
+                <th class="num">Value CI</th>
+                <th class="num">Expected</th>
+                <th>Tgl Bayar</th>
+                <th class="num">Value Bayar</th>
                 <th class="num">Selisih</th>
                 <th>Status</th>
                 <th style="width:80px"></th>
@@ -912,110 +957,90 @@
         </div>
       </div>
 
-      <!-- Input PIB Form -->
+      <!-- Input Payment Proof Form -->
       <div class="form-card">
         <div class="form-card-title">
           <i class="ti ti-plus"></i>
-          <span>Input / Upload PIB</span>
-          <span class="badge badge-blue" style="margin-left:8px;font-size:11px">AI-Powered · PDF + Excel</span>
+          <span>Input / Upload Bukti Pembayaran (Payment Proof)</span>
+          <span class="badge badge-blue" style="margin-left:8px;font-size:11px">AI-Powered · PDF + Excel (opsional)</span>
         </div>
 
-        <!-- PO Selection -->
-        <div class="form-grid-2" style="margin-bottom:16px">
-          <div class="field-group">
-            <label>Pilih PO Number <span style="color:var(--c-red,#ef4444)">*</span></label>
-            <select id="vr-po-select" class="field-input">
-              <option value="">— Pilih PO yang akan direkonsiliasi —</option>
-            </select>
-            <div class="field-hint">PO value & currency akan diambil otomatis dari sistem</div>
-          </div>
-          <div id="vr-po-preview" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-            <!-- Auto-filled when PO selected -->
-          </div>
-        </div>
-
-        <!-- PIB Upload Zone -->
+        <!-- Upload Zone -->
         <div class="hint-box hint-box-blue" style="margin-bottom:12px">
           <i class="ti ti-sparkles"></i>
-          Upload file PIB (PDF Bea Cukai BC 2.0 / Excel) — AI akan membaca Nomor PIB, Currency, Nilai FOB, dan semua pos barang secara otomatis.
+          Upload file bukti transfer / payment proof (PDF/Excel) — AI akan mencoba membaca tanggal dan nilai transfer secara otomatis, atau isi manual di bawah.
         </div>
-        <div id="vr-pib-drop-zone" class="pdf-drop-zone"
-          onclick="document.getElementById('vr-pib-file').click()"
+        <div id="vr-pay-drop-zone" class="pdf-drop-zone"
+          onclick="document.getElementById('vr-pay-file').click()"
           ondragover="event.preventDefault();this.classList.add('dragover')"
           ondragleave="this.classList.remove('dragover')"
-          ondrop="handleVrPibDrop(event)">
-          <input type="file" id="vr-pib-file" accept=".pdf,.xlsx,.xls,.csv" style="display:none"
-            onchange="handleVrPibUpload(this.files[0])" />
-          <div id="vr-pib-drop-content">
+          ondrop="handleVrPayDrop(event)">
+          <input type="file" id="vr-pay-file" accept=".pdf,.xlsx,.xls,.csv" style="display:none"
+            onchange="handleVrPayUpload(this.files[0])" />
+          <div id="vr-pay-drop-content">
             <i class="ti ti-file-upload" style="font-size:30px;color:var(--c-blue);margin-bottom:8px"></i>
-            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop file PIB</div>
-            <div style="font-size:12px;color:var(--c-text-hint)">PDF (BC 2.0) · Excel (.xlsx) · CSV — atau isi manual di bawah</div>
+            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop file bukti pembayaran</div>
+            <div style="font-size:12px;color:var(--c-text-hint)">PDF · Excel (.xlsx) · CSV — atau isi manual di bawah</div>
           </div>
-          <div id="vr-pib-loading" style="display:none;text-align:center">
+          <div id="vr-pay-loading" style="display:none;text-align:center">
             <div class="pdf-spinner"></div>
-            <div style="font-size:13px;margin-top:10px;color:var(--c-blue)">AI membaca PIB…</div>
+            <div style="font-size:13px;margin-top:10px;color:var(--c-blue)">AI membaca bukti pembayaran…</div>
           </div>
         </div>
 
-        <!-- Review Panel -->
-        <div id="vr-review-panel" style="display:none;margin-top:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;display:flex;align-items:center;gap:8px">
-            <i class="ti ti-edit"></i> Review & Edit Data PIB
-            <span class="badge badge-blue" style="font-size:10px">Cek hasil AI, ubah bila perlu</span>
-          </div>
+        <!-- Form Fields -->
+        <div style="margin-top:16px">
           <div class="form-grid-3">
             <div class="field-group">
-              <label>Nomor PIB <span style="color:var(--c-red,#ef4444)">*</span></label>
-              <input type="text" id="vr-pibn" placeholder="e.g. 624000" />
+              <label>Tanggal Payment Proof <span class="req">*</span></label>
+              <input type="date" id="vr-pay-date" />
             </div>
             <div class="field-group">
-              <label>Nomor Pengajuan</label>
-              <input type="text" id="vr-pib-pengajuan" placeholder="00000000032620250926012757" style="font-size:11px;font-family:monospace" />
+              <label>Value Payment Proof <span class="req">*</span></label>
+              <input type="number" id="vr-pay-value" placeholder="5000000" step="0.01" />
             </div>
             <div class="field-group">
-              <label>Tanggal PIB</label>
-              <input type="date" id="vr-pib-date" />
+              <label>Currency</label>
+              <input type="text" id="vr-pay-currency" placeholder="USD" style="text-transform:uppercase" />
             </div>
             <div class="field-group">
-              <label>Currency PIB</label>
-              <input type="text" id="vr-pib-currency" placeholder="JPY" style="text-transform:uppercase" />
-              <div class="field-hint">Harus sama dengan currency PO agar Match</div>
+              <label>Term Pembayaran <span class="req">*</span></label>
+              <select id="vr-pay-term" onchange="vrTermChanged()">
+                <option value="50">50% (Down Payment)</option>
+                <option value="100">100% (Full Payment)</option>
+                <option value="manual">Isi Manual</option>
+              </select>
+            </div>
+            <div class="field-group" id="vr-pay-term-manual-wrap" style="display:none">
+              <label>Persentase Manual (%)</label>
+              <input type="number" id="vr-pay-term-manual" placeholder="e.g. 30" min="0" max="100" step="0.01" />
             </div>
             <div class="field-group">
-              <label>Total FOB Value (mata uang PIB)</label>
-              <input type="number" id="vr-pib-fob" placeholder="8566600" step="0.01" />
-              <div class="field-hint">Nilai FOB yang akan dibandingkan dengan Total Value PO</div>
+              <label>Nomor PO yang Dituju <span class="req">*</span></label>
+              <select id="vr-pay-po-select" class="field-input" onchange="vrPayPoChanged()">
+                <option value="">— Pilih PO —</option>
+              </select>
             </div>
             <div class="field-group">
-              <label>NDPBM (Kurs)</label>
-              <input type="number" id="vr-pib-ndpbm" placeholder="112.7944" step="0.0001" />
+              <label>Nomor CI yang Dituju <span class="req">*</span></label>
+              <select id="vr-pay-ci-select" class="field-input">
+                <option value="">— Pilih PO terlebih dahulu —</option>
+              </select>
+              <div class="field-hint">Hanya menampilkan CI yang terdaftar untuk PO terpilih</div>
             </div>
             <div class="field-group">
-              <label>Nilai Pabean (IDR)</label>
-              <input type="number" id="vr-pib-idr" placeholder="983835531.82" step="1" />
-            </div>
-            <div class="field-group">
-              <label>Invoice Reference</label>
-              <input type="text" id="vr-pib-invoice" placeholder="IZ-SO-25-09" style="font-family:monospace" />
+              <label>Referensi / Keterangan</label>
+              <input type="text" id="vr-pay-ref" placeholder="No. referensi transfer bank (opsional)" />
             </div>
           </div>
-
-          <!-- PIB Items Table (auto-filled from upload) -->
-          <div id="vr-pib-items-wrap" style="margin-top:12px"></div>
+          <div id="vr-pay-preview" style="margin-top:4px"></div>
         </div>
 
-        <!-- Manual entry trigger -->
-        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-          <button class="btn-ghost btn-sm" onclick="document.getElementById('vr-review-panel').style.display='block'">
-            <i class="ti ti-pencil"></i> Input Manual
+        <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-ghost" onclick="vrResetForm()"><i class="ti ti-rotate"></i> Reset</button>
+          <button class="btn-primary" id="vr-save-btn" type="button" onclick="vrSave()">
+            <i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi
           </button>
-          <span style="font-size:12px;color:var(--c-text-hint)">atau upload file PIB di atas untuk auto-fill</span>
-          <div style="margin-left:auto;display:flex;gap:8px">
-            <button class="btn-ghost" onclick="vrResetForm()"><i class="ti ti-rotate"></i> Reset</button>
-            <button class="btn-primary" onclick="vrSave()">
-              <i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi
-            </button>
-          </div>
         </div>
       </div>
     </section>
@@ -1025,7 +1050,7 @@
       <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:900px;padding:24px;position:relative">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
           <i class="ti ti-scale" style="font-size:20px;color:var(--c-blue)"></i>
-          <h2 style="font-size:16px;font-weight:600;margin:0">Detail Value Reconciliation</h2>
+          <h2 style="font-size:16px;font-weight:600;margin:0">Detail Value Reconciliation — Payment Proof vs CI</h2>
           <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="vrCloseDetail()"><i class="ti ti-x"></i></button>
         </div>
         <div id="vr-detail-content"></div>
@@ -1320,87 +1345,8 @@
             </tbody>
           </table>
         </div>
-      </div>
 
-      <!-- NIE Database -->
-      <div class="form-card">
-        <div class="form-card-title">
-          <i class="ti ti-database"></i>
-          <span>NIE Database</span>
-          <span id="nie-db-count" class="badge badge-blue" style="margin-left:8px;font-size:12px">0 NIE</span>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-            <input type="text" id="nie-db-search" placeholder="Cari NIE / Produk / SKU…"
-              style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;min-width:200px"
-              oninput="nieSearchDb()" />
-            <button class="btn-ghost btn-sm" onclick="nieScanFolder()">
-              <i class="ti ti-folder-search"></i> Scan Folder
-            </button>
-          </div>
-        </div>
-
-        <!-- Add NIE Form -->
-        <div style="background:var(--c-surface-2,rgba(0,0,0,.03));border-radius:var(--border-radius-md);padding:14px;margin-bottom:16px">
-          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">
-            <i class="ti ti-plus"></i> Tambah NIE Manual
-          </div>
-          <div class="form-grid-3" style="gap:10px;margin-bottom:10px">
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">Nomor NIE *</label>
-              <input type="text" id="nie-add-nie" placeholder="NA26251200644" style="font-family:monospace" />
-            </div>
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">Nama Produk *</label>
-              <input type="text" id="nie-add-name" placeholder="Rice Toner 30ml" />
-            </div>
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">Brand</label>
-              <input type="text" id="nie-add-brand" placeholder="KEANA" />
-            </div>
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">Variant / Ukuran</label>
-              <input type="text" id="nie-add-variant" placeholder="30ml, 170gr" />
-            </div>
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">SKU / Rev Code</label>
-              <input type="text" id="nie-add-sku" placeholder="KAN.SC-MTNCM01170ALL1" style="font-family:monospace;font-size:12px" />
-            </div>
-            <div class="field-group" style="margin:0">
-              <label style="font-size:12px">Rev Code Internal</label>
-              <input type="text" id="nie-add-reff" placeholder="(opsional)" style="font-family:monospace;font-size:12px" />
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <div class="field-group" style="margin:0;flex:1">
-              <label style="font-size:12px">Nama File PDF NIE</label>
-              <input type="text" id="nie-add-file" placeholder="NIE_KEANA_RICE_PACK.pdf" />
-            </div>
-            <button class="btn-primary btn-sm" style="white-space:nowrap;margin-top:16px" onclick="nieAddManual()">
-              <i class="ti ti-plus"></i> Tambah
-            </button>
-          </div>
-        </div>
-
-        <!-- NIE Table -->
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Nomor NIE</th>
-                <th>Nama Produk</th>
-                <th>Brand</th>
-                <th>Variant</th>
-                <th>SKU / Rev Code</th>
-                <th>File NIE</th>
-                <th style="width:50px"></th>
-              </tr>
-            </thead>
-            <tbody id="nie-db-tbody">
-              <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--c-text-hint)">Belum ada data NIE.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Settings -->
+        <!-- Pengaturan Matching (dipindahkan dari NIE Database) -->
         <div style="margin-top:16px;padding:12px 14px;background:var(--c-surface-2,rgba(0,0,0,.03));border-radius:var(--border-radius-md);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
           <div style="font-size:12px;font-weight:600;color:var(--c-text-hint)"><i class="ti ti-settings"></i> Pengaturan Matching</div>
           <div style="display:flex;align-items:center;gap:8px;font-size:13px">

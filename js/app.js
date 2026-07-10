@@ -83,6 +83,92 @@ function updateKPI(data) {
   document.getElementById('kpi-lebih').textContent  = counts['lebih'];
 }
 
+// ── Dashboard overview (hero, alerts, PO status summary) ───────
+function renderDashboardOverview() {
+  const data = getAllPoData();
+
+  // Greeting + date
+  const greetEl = document.getElementById('dash-greeting');
+  const dateEl  = document.getElementById('dash-date');
+  if (greetEl) {
+    const h = new Date().getHours();
+    const salam = h < 11 ? 'Selamat pagi' : h < 15 ? 'Selamat siang' : h < 19 ? 'Selamat sore' : 'Selamat malam';
+    greetEl.innerHTML = `<i class="ti ti-hand-sparkles"></i> ${salam}, Admin`;
+  }
+  if (dateEl) {
+    const span = dateEl.querySelector('span') || dateEl;
+    span.textContent = new Date().toLocaleDateString('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+  }
+
+  // Counts per status
+  const counts = { 'belum-pib': 0, kurang: 0, match: 0, lebih: 0 };
+  data.forEach(d => { if (d.status in counts) counts[d.status]++; });
+  const total = data.length || 0;
+
+  // Alerts
+  const alertsEl = document.getElementById('dash-alerts');
+  if (alertsEl) {
+    const alerts = [];
+    if (counts['belum-pib'] > 0) {
+      alerts.push({ cls:'alert-warn', icon:'ti-file-alert', tab:'history',
+        html:`<b>${counts['belum-pib']} PO</b> belum memiliki nomor PIB — segera lengkapi dokumen` });
+    }
+    if (counts.kurang > 0) {
+      alerts.push({ cls:'alert-danger', icon:'ti-trending-down', tab:'history',
+        html:`<b>${counts.kurang} PO</b> mengalami shortage — qty warehouse lebih sedikit dari PIB` });
+    }
+    if (counts.lebih > 0) {
+      alerts.push({ cls:'alert-info', icon:'ti-trending-up', tab:'history',
+        html:`<b>${counts.lebih} PO</b> kelebihan qty (excess) dibanding PIB` });
+    }
+    const soon = MOCK_SHIPMENTS
+      .map(s => ({ ...s, d: getDaysUntil(s.ataPort) }))
+      .filter(s => s.d !== null && s.d >= 0 && s.d <= 3);
+    if (soon.length > 0) {
+      alerts.push({ cls:'alert-warn', icon:'ti-ship', tab:'shipment',
+        html:`<b>${soon.length} shipment</b> akan tiba di pelabuhan dalam 3 hari ke depan` });
+    }
+
+    if (!alerts.length) {
+      alertsEl.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-circle-check"></i> Semua PO dan shipment dalam kondisi baik. Tidak ada yang perlu ditindaklanjuti.</div>`;
+    } else {
+      alertsEl.innerHTML = alerts.map(a => `
+        <div class="dash-alert-item ${a.cls}" onclick="switchTab('${a.tab}')">
+          <i class="ti ${a.icon}"></i>
+          <span>${a.html}</span>
+          <i class="ti ti-chevron-right dash-alert-arrow"></i>
+        </div>`).join('');
+    }
+  }
+
+  // Shipment count badge
+  const shipCountEl = document.getElementById('dash-ship-count');
+  if (shipCountEl) shipCountEl.textContent = `${MOCK_SHIPMENTS.length} shipment`;
+
+  // PO status summary cards — HIDDEN
+  // const summaryEl = document.getElementById('dash-po-summary');
+  // if (summaryEl) {
+  //   const cards = [
+  //     { key:'belum-pib', label:'Belum PIB', color:'var(--c-gray)',   count: counts['belum-pib'] },
+  //     { key:'kurang',    label:'Shortage',  color:'var(--c-red)',    count: counts.kurang },
+  //     { key:'match',     label:'Match',     color:'var(--c-green)',  count: counts.match },
+  //     { key:'lebih',     label:'Excess',    color:'var(--c-orange)', count: counts.lebih },
+  //   ];
+  //   summaryEl.innerHTML = `<div class="po-summary-grid">${cards.map(c => {
+  //     const pct = total ? Math.round((c.count/total)*100) : 0;
+  //     return `
+  //       <div class="po-summary-card">
+  //         <div class="po-summary-top">
+  //           <span class="po-summary-label">${c.label}</span>
+  //           <span class="po-summary-count" style="color:${c.color}">${c.count}</span>
+  //         </div>
+  //         <div class="po-summary-bar-track"><div class="po-summary-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
+  //         <div class="po-summary-pct">${pct}% dari total ${total} PO</div>
+  //       </div>`;
+  //   }).join('')}</div>`;
+  // }
+}
+
 // ── Tab navigation ─────────────────────────────────────────────
 const PAGE_CONFIG = {
   home:        { title: 'Dashboard',             sub: 'Ringkasan aktivitas import dan shipment terkini',       navId: 'nav-home'        },
@@ -123,10 +209,8 @@ function switchTab(tab) {
 
   // Per-tab actions
   if (tab === 'home') {
-    renderDashboardHeader();
-    renderDashboardAlerts();
+    renderDashboardOverview();
     renderShipmentTop5('home-hero', { layout: 'stack', clickable: true });
-    renderDashboardPoSummary();
     renderHomeCalendar();
   } else if (tab === 'shipment') {
     renderShipmentDashboard();
@@ -2052,135 +2136,84 @@ function renderShipmentTop5(containerId, options = {}) {
   const container = document.getElementById(containerId);
   if (!container) return;
 
-  const all = [...MOCK_SHIPMENTS]
-    .map(item => ({
-      ...item,
-      daysToPort: getDaysUntil(item.ataPort),
-      daysToWH:   getDaysUntil(item.ataWarehouse),
-      daysToETD:  getDaysUntil(item.etd),
-    }))
-    .sort((a, b) => {
-      // Sort: incoming first (positive days), then already arrived (negative)
-      const da = a.daysToWH ?? 9999;
-      const db = b.daysToWH ?? 9999;
-      return da - db;
-    })
+  const top5 = [...MOCK_SHIPMENTS]
+    .map(item => ({ ...item, etaDistance: getDaysUntil(item.ataPort), transit: getDaysBetween(item.etd, item.ataPort) }))
+    .filter(item => item.etaDistance !== null)
+    .sort((a, b) => a.etaDistance - b.etaDistance)
     .slice(0, 5);
 
-  if (!all.length) { container.innerHTML = '<div style="padding:24px;color:var(--c-text-hint);text-align:center">Belum ada data shipment.</div>'; return; }
+  if (!top5.length) { container.innerHTML = ''; return; }
 
-  // ── Render new dashboard shipment cards ─────────────────────
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:20px';
-
-  all.forEach((item, i) => {
-    const d = item.daysToWH;
-    // Status + urgency
-    let urgency = 'normal', urgencyLabel = '', urgencyColor = '';
-    if (d === null || d === undefined) {
-      urgency = 'unknown'; urgencyLabel = 'Tanggal ?'; urgencyColor = '#94a3b8';
-    } else if (d < 0) {
-      urgency = 'arrived'; urgencyLabel = 'Sudah Tiba'; urgencyColor = '#22c55e';
-    } else if (d === 0) {
-      urgency = 'today'; urgencyLabel = 'Hari Ini!'; urgencyColor = '#f97316';
-    } else if (d <= 3) {
-      urgency = 'urgent'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#ef4444';
-    } else if (d <= 7) {
-      urgency = 'soon'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#f97316';
-    } else {
-      urgency = 'normal'; urgencyLabel = `${d} hari lagi`; urgencyColor = '#3b82f6';
-    }
-
-    // Timeline progress (ETD → Port → WH)
-    const stages = [
-      { label:'ETD', date: item.etd,          days: item.daysToETD,  icon:'ti-plane-departure', color:'#6366f1' },
-      { label:'Port',date: item.ataPort,       days: item.daysToPort, icon:'ti-anchor',          color:'#f97316' },
-      { label:'WH',  date: item.ataWarehouse,  days: item.daysToWH,   icon:'ti-building-warehouse', color:'#22c55e' },
-    ];
-
-    const timelineHtml = stages.map((s, si) => {
-      const done = s.days !== null && s.days < 0;
-      const active = s.days !== null && s.days >= 0 && (si === 0 || stages[si-1].days < 0);
-      return `
-        <div style="display:flex;align-items:center;gap:0;flex:1;min-width:0">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0">
-            <div style="width:26px;height:26px;border-radius:50%;background:${done?s.color:active?s.color+'22':'rgba(0,0,0,.06)'};border:2px solid ${done||active?s.color:'rgba(0,0,0,.12)'};display:flex;align-items:center;justify-content:center;transition:all .2s">
-              <i class="ti ${s.icon}" style="font-size:12px;color:${done||active?s.color:'#94a3b8'}"></i>
-            </div>
-            <div style="font-size:10px;font-weight:600;color:${done||active?s.color:'#94a3b8'};text-transform:uppercase;letter-spacing:.04em">${s.label}</div>
-            <div style="font-size:10px;color:${done?'#64748b':active?s.color:'#94a3b8'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:72px;text-align:center">${s.date?fmtDate(s.date):'—'}</div>
-          </div>
-          ${si < stages.length-1 ? `<div style="height:2px;flex:1;background:${done&&stages[si+1]?.days<0?'#e2e8f0':'linear-gradient(90deg,'+s.color+',rgba(0,0,0,.08))'};margin:0 2px;margin-bottom:18px;transition:all .2s;min-width:8px"></div>` : ''}
-        </div>`;
-    }).join('');
-
-    const card = document.createElement('div');
-    card.style.cssText = `
-      background:var(--c-surface);
-      border:0.5px solid ${urgency==='urgent'||urgency==='today'?'rgba(239,68,68,.3)':urgency==='soon'?'rgba(249,115,22,.25)':'var(--c-border)'};
-      border-top: 3px solid ${urgencyColor};
-      border-radius:12px;
-      padding:16px;
-      cursor:${clickable?'pointer':'default'};
-      transition:box-shadow .15s,transform .15s;
-      position:relative;
-      overflow:hidden;
-    `;
-    if (clickable) {
-      card.setAttribute('onclick', "switchTab('shipment')");
-      card.onmouseenter = () => { card.style.boxShadow='0 4px 20px rgba(0,0,0,.1)'; card.style.transform='translateY(-2px)'; };
-      card.onmouseleave = () => { card.style.boxShadow=''; card.style.transform=''; };
-    }
-
-    // Urgency pulse for critical
-    const pulseStyle = (urgency==='urgent'||urgency==='today')
-      ? `position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%;background:${urgencyColor};box-shadow:0 0 0 3px ${urgencyColor}33;animation:pulse 1.5s ease infinite`
-      : '';
-
-    card.innerHTML = `
-      ${pulseStyle ? `<div style="${pulseStyle}"></div>` : ''}
-      <!-- Header -->
-      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px">
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;flex-wrap:wrap">
-            <span style="font-size:13px;font-weight:800;color:var(--c-text-primary);letter-spacing:.01em">${item.brand}</span>
-            <span style="font-size:10px;padding:2px 6px;border-radius:4px;font-weight:700;background:${item.containerType==='FCL'?'rgba(99,102,241,.12)':'rgba(249,115,22,.12)'};color:${item.containerType==='FCL'?'#6366f1':'#f97316'}">${item.containerType||'—'}</span>
-            <span style="font-size:10px;color:var(--c-text-hint)">#${i+1}</span>
-          </div>
-          <div style="font-size:12px;color:var(--c-text-hint);margin-bottom:2px">${item.shipmentName}</div>
-          <div style="font-size:12px;color:var(--c-text-sub);display:flex;align-items:center;gap:4px">
-            <i class="ti ti-ship" style="font-size:11px"></i>${item.vessel||'—'}
-          </div>
+  if (layout === 'stack') {
+    const grid = document.createElement('div');
+    grid.className = 'shipment-stack';
+    top5.forEach((item, i) => {
+      const card = document.createElement('div');
+      card.className = 'shipment-stack-row' + (clickable ? ' clickable' : '');
+      if (clickable) card.setAttribute('onclick', "switchTab('shipment')");
+      card.innerHTML = `
+        <div class="shipment-stack-brand">
+          <span class="shipment-top5-brand">${item.brand}</span>
+          <span class="shipment-stack-container">${item.containerType||'—'}</span>
+          <span class="shipment-stack-rank">#${i+1}</span>
         </div>
-        <!-- Countdown badge -->
-        <div style="text-align:center;padding:6px 10px;border-radius:8px;background:${urgencyColor}15;border:1px solid ${urgencyColor}30;min-width:64px;flex-shrink:0">
-          <div style="font-size:${d!==null&&d>=0&&d<=99?'18':'14'}px;font-weight:800;color:${urgencyColor};line-height:1.1">${d !== null ? (d < 0 ? '✓' : d) : '?'}</div>
-          <div style="font-size:9px;font-weight:600;color:${urgencyColor};text-transform:uppercase;letter-spacing:.05em;margin-top:1px">${d !== null ? (d < 0 ? 'Tiba' : 'hari') : 'hari'}</div>
-          <div style="font-size:9px;color:${urgencyColor};opacity:.8">ke WH</div>
+        <div class="shipment-name" style="margin-bottom:8px;font-size:14px;font-weight:800">${item.shipmentName}</div>
+        <div class="shipment-stack-vessel"><i class="ti ti-ship" style="vertical-align:-2px;margin-right:4px"></i>${item.vessel||'—'}</div>
+        <div class="shipment-stack-dates">
+          <span><i class="ti ti-plane-departure" style="font-size:11px;margin-right:3px;color:var(--c-blue)"></i>ETD: ${fmtDate(item.etd)}</span>
+          <span><i class="ti ti-anchor" style="font-size:11px;margin-right:3px;color:var(--c-orange)"></i>ATA Port: ${fmtDate(item.ataPort)}</span>
+          <span><i class="ti ti-building-warehouse" style="font-size:11px;margin-right:3px;color:var(--c-green)"></i>ATA WH: ${fmtDate(item.ataWarehouse)}</span>
         </div>
-      </div>
-
-      <!-- Timeline -->
-      <div style="display:flex;align-items:flex-start;gap:0;margin-bottom:12px;padding:10px 4px 4px;background:var(--c-surface-2,rgba(0,0,0,.025));border-radius:8px">
-        ${timelineHtml}
-      </div>
-
-      <!-- Footer info -->
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--c-text-hint)">
-        <span style="display:flex;align-items:center;gap:4px">
-          <i class="ti ti-file-text" style="font-size:11px"></i>${item.noBl||'—'}
-        </span>
-        <span style="display:flex;align-items:center;gap:4px">
-          <i class="ti ti-truck" style="font-size:11px"></i>${item.linerShipment||'—'}
-        </span>
-      </div>
-    `;
-
-    wrap.appendChild(card);
-  });
-
-  container.innerHTML = '';
-  container.appendChild(wrap);
+        <div class="shipment-stack-info" style="font-size:12px;color:var(--c-text-hint);padding:4px 0">
+          <span><i class="ti ti-file-text" style="font-size:11px;margin-right:3px"></i>BL: ${item.noBl||'—'}</span>
+          <span style="margin-left:12px"><i class="ti ti-truck" style="font-size:11px;margin-right:3px"></i>Liner: ${item.linerShipment||'—'}</span>
+        </div>
+        <div class="shipment-stack-countdown">
+          ${item.etaDistance >= 0 ? `<i class="ti ti-clock" style="margin-right:6px"></i>${item.etaDistance} hari lagi` : `<i class="ti ti-check" style="margin-right:6px"></i>Sudah tiba`}
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+    container.innerHTML = '';
+    container.appendChild(grid);
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'shipment-stack';
+    top5.forEach((item, i) => {
+      const card = document.createElement('div');
+      card.className = 'shipment-stack-row' + (clickable ? ' clickable' : '');
+      card.innerHTML = `
+        <div class="shipment-stack-brand">
+          <span class="shipment-top5-brand">${item.brand}</span>
+          <span class="shipment-stack-container">${item.containerType||'—'}</span>
+          <span class="shipment-stack-rank">#${i+1}</span>
+        </div>
+        <div class="shipment-name" style="margin-bottom:8px;font-size:14px;font-weight:800">${item.shipmentName}</div>
+        <div class="shipment-stack-vessel">${item.vessel||'—'}</div>
+        <div class="shipment-stack-dates">
+          <span>ETD: ${fmtDate(item.etd)}</span>
+          <span>ATA Port: ${fmtDate(item.ataPort)}</span>
+          <span>ATA WH: ${fmtDate(item.ataWarehouse)}</span>
+        </div>
+        <div class="shipment-stack-info" style="font-size:12px;color:var(--c-text-hint);padding:4px 0">
+          <span>BL: ${item.noBl||'—'}</span>
+          <span style="margin-left:12px">Liner: ${item.linerShipment||'—'}</span>
+        </div>
+        <div class="shipment-stack-countdown">
+          ${item.etaDistance >= 0 ? `${item.etaDistance} hari lagi` : 'Sudah tiba'}
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+    container.innerHTML = '';
+    if (top5.length) {
+      const heading = document.createElement('div');
+      heading.className = 'section-heading';
+      heading.innerHTML = '<i class="ti ti-star"></i><span>Top Upcoming Shipments</span>';
+      container.appendChild(heading);
+    }
+    container.appendChild(grid);
+  }
 }
 
 // ── Calendar with navigation ───────────────────────────────────
@@ -2329,12 +2362,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 // ══════════════════════════════════════════════════════════════
-// VALUE RECONCILIATION — PO vs PIB
+// VALUE RECONCILIATION — Payment Proof vs CI (Commercial Invoice)
 // ══════════════════════════════════════════════════════════════
+//
+// Konsep:
+//  1. User mendata Nilai CI (Commercial Invoice) per PO — ini menjadi acuan.
+//  2. User input / upload Bukti Pembayaran (Payment Proof): tanggal, value,
+//     term pembayaran (50% / 100% / manual), nomor PO tujuan, nomor CI tujuan.
+//  3. Sistem menghitung Expected Value = Value CI × Term%, lalu membandingkan
+//     dengan Value Payment Proof aktual → menghasilkan status Match / Kurang
+//     Bayar / Lebih Bayar (atau Currency Mismatch / CI Tidak Ditemukan).
 
-// ── Data store (in-memory, keyed by pibn) ────────────────────
-let VR_DATA = []; // [{pibn, poNumber, pibDate, currencyPO, currencyPIB, valuePO, valuePIB, diff, status, comment, auditTrail, reviewItems}]
-let VR_AUDIT = []; // global audit trail
+// ── Data stores (in-memory) ──────────────────────────────────
+let CI_VALUES = [];      // [{poNumber, ciNumber, ciDate, currency, value}]
+let PAYMENT_PROOFS = []; // [{poNumber, ciNumber, tanggal, value, currency, term, termPercent, expectedValue, diff, reference, comment, auditTrail, _savedAt}]
+let VR_AUDIT = [];        // global audit trail
+let vrCurrentPay = null;  // parsed payment-proof data pending review
 
 function vrLog(action, detail) {
   const entry = { ts: new Date().toISOString(), user: 'Admin', action, detail };
@@ -2342,364 +2385,275 @@ function vrLog(action, detail) {
   return entry;
 }
 
-// ── PIB System Prompt ─────────────────────────────────────────
-const PIB_SYSTEM_PROMPT = `You are a PIB (Pemberitahuan Impor Barang) data extraction assistant for PT Social Bella Indonesia.
-PIB is an Indonesian customs import declaration document. Extract key financial data and return ONLY valid JSON.
-
-JSON structure:
-{
-  "nomor_pib": "",
-  "tanggal_pib": "",
-  "nomor_pengajuan": "",
-  "po_reference": null,
-  "invoice_reference": null,
-  "currency_pib": "",
-  "ndpbm": 0,
-  "nilai_fob": 0,
-  "nilai_freight": 0,
-  "nilai_asuransi": 0,
-  "nilai_pabean": 0,
-  "nilai_pabean_idr": 0,
-  "total_bm": 0,
-  "total_ppn": 0,
-  "total_pph": 0,
-  "total_pungutan": 0,
-  "supplier": ""
-}
-
-EXTRACTION RULES for PIB (Indonesian customs form BC 2.0):
-1. nomor_pib: Field "G. Nomor dan Tanggal Pendaftaran" — ambil HANYA angka 5-7 digit yang ada DI BAWAH label tersebut (e.g. "624000"). BUKAN nomor pengajuan 26 digit. BUKAN nomor lain. Cari di body dokumen, bukan di header form.
-2. tanggal_pib: Tanggal yang muncul bersama nomor PIB di field G (format DD-MM-YYYY → convert ke YYYY-MM-DD).
-3. nomor_pengajuan: "Nomor Pengajuan" — angka panjang 26 digit (e.g. "00000000032620250926012757")
-4. po_reference: Look for PO/SBI/... pattern or invoice reference linking to PO
-5. invoice_reference: "Invoice: No." field — e.g. "IZ-SO-25-09"
-6. currency_pib: "Valuta" field (field 21) — e.g. "JPY"
-7. ndpbm: "NDPBM" field (field 22) — kurs tengah, e.g. 112.7944
-8. nilai_fob: Field 23 "Nilai :" — ini adalah nilai FOB dalam mata uang asing. Di dokumen dicetak sebagai "23. Nilai :" dengan "FOB" sebagai label incoterm terpisah. Ambil angka yang ada di area field 23 ini, BUKAN nilai pabean IDR. Contoh: 8566600.00
-9. nilai_freight: Field 25 "Freight" value
-10. nilai_asuransi: Field 24 "Asuransi/LDN" value
-11. nilai_pabean: Field 26 "Nilai Pabean" dalam mata uang asing (FOB+freight+insurance)
-12. nilai_pabean_idr: "Nilai Pabean" converted to IDR (prefixed "RP")
-13. total_ppn: PPN amount from pungutan table (row 41)
-14. total_pph: PPh amount from pungutan table (row 43)
-15. supplier: From "PENGIRIM / Nama, Alamat" section — company name only
-
-DO NOT extract items list. Return ONLY valid JSON, no explanation.`;
-
-// ── PIB Parser (AI) ───────────────────────────────────────────
-async function parsePibWithAI(pdfText) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: PIB_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Extract all PIB data from the following text. Return ONLY valid JSON.\n\nPIB TEXT:\n${pdfText}` }]
-    })
-  });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-  const raw = data.content.map(b => b.text||'').join('');
-  return JSON.parse(raw.replace(/```json\s*/gi,'').replace(/```\s*/g,'').trim());
-}
-
-// ── PIB Heuristic Parser ──────────────────────────────────────
-function parsePibHeuristic(text) {
-  const t = text.replace(/\r/g,'');
-  const out = {
-    nomor_pib: null, tanggal_pib: null, nomor_pengajuan: null,
-    po_reference: null, invoice_reference: null,
-    currency_pib: 'JPY', ndpbm: 0,
-    nilai_fob: 0, nilai_freight: 0, nilai_asuransi: 0,
-    nilai_pabean: 0, nilai_pabean_idr: 0,
-    total_bm: 0, total_ppn: 0, total_pph: 0, total_pungutan: 0,
-    supplier: null
-  };
-
-  // Nomor PIB — field G: 6 digit nomor pendaftaran
-  // Cari pola "G. Nomor dan Tanggal Pendaftaran" lalu ambil angka 6 digit
-  const nopMatch = t.match(/G\.\s*Nomor\s*dan\s*Tanggal\s*Pendaftaran[\s\S]{0,80}?(\d{6})\b/i)
-                || t.match(/Nomor\s*Pendaf[a-z]*\s*[:\s]+(\d{5,8})/i)
-                || t.match(/\b(\d{6})\b(?=\s*\n?\s*\d{2}-\d{2}-\d{4})/); // 6 digit diikuti tanggal
-  if (nopMatch) out.nomor_pib = nopMatch[1];
-
-  // ── Nomor PIB (5-7 digit) dari field G ──────────────────────
-  // Setelah label "G. Nomor dan Tanggal Pendaftaran", cari angka 5-7 digit terdekat.
-  // PDF sering merender nilai ini di baris terpisah setelah header fieldnya.
-  const gBlockMatch = t.match(/G\.\s*Nomor\s*dan\s*Tanggal\s*Pendaftaran([\s\S]{0,300})/i);
-  if (gBlockMatch) {
-    // Ambil angka 5-7 digit pertama dalam blok (bukan bagian dari angka lebih panjang)
-    const sixDigit = gBlockMatch[1].match(/(?<!\d)(\d{5,7})(?!\d)/);
-    if (sixDigit) out.nomor_pib = sixDigit[1];
-  }
-  // Fallback: "Nomor Pendaftaran" di header halaman lanjutan → angka di bawahnya
-  if (!out.nomor_pib) {
-    const fallback = t.match(/Nomor\s*Pendaf[a-z]*\s*[:\s]*\n?\s*(\d{5,7})\b/i);
-    if (fallback) out.nomor_pib = fallback[1];
-  }
-  // Fallback kedua: pola 6 digit diikuti tanggal dd-mm-yyyy di baris berikutnya
-  if (!out.nomor_pib) {
-    const m2 = t.match(/\b(\d{6})\b[\s\S]{0,10}\d{2}-\d{2}-\d{4}/);
-    if (m2) out.nomor_pib = m2[1];
-  }
-
-  // ── Nomor pengajuan (26 digit) ──
-  const npMatch = t.match(/(\d{26})/);
-  if (npMatch) out.nomor_pengajuan = npMatch[1];
-
-  // ── Tanggal pendaftaran ──
-  const tglMatch = t.match(/Tanggal\s*Pendaftaran\s*[:\s]*(\d{2}-\d{2}-\d{4})/i) ||
-                   t.match(/(\d{2}-\d{2}-\d{4})/);
-  if (tglMatch) {
-    const [d,m,y] = tglMatch[1].split('-');
-    out.tanggal_pib = `${y}-${m}-${d}`;
-  }
-
-  // ── Currency (field 21 Valuta) ──
-  const curM = t.match(/21\.\s*Valuta\s*[:\s]*([A-Z]{3})/i)
-            || t.match(/Valuta\s*[:\s]+([A-Z]{3})/i)
-            || t.match(/\b(JPY|USD|KRW|EUR)\b/i);
-  if (curM) out.currency_pib = curM[1].toUpperCase();
-
-  // ── NDPBM (field 22) ──
-  const ndpMatch = t.match(/22\.\s*NDPBM\s*[:\s]*([\d.,]+)/i)
-                || t.match(/NDPBM\s*[:\s]*([\d.,]+)/i);
-  if (ndpMatch) out.ndpbm = parsePibNum(ndpMatch[1]);
-
-  // ── FOB (field 23 "Nilai :") ──────────────────────────────────
-  // Di PDF PIB BC 2.0, field 23 berisi nilai FOB dalam mata uang asing.
-  // Label di dokumen: "23. Nilai :" dengan incoterm "FOB" tercetak terpisah.
-  // PDF text extractor bisa menghasilkan berbagai urutan, strategi berlapis:
-
-  // Strategi 1: cari blok antara "23. Nilai" dan field berikutnya (24/25/26)
-  const f23raw = t.match(/23\.\s*Nilai\s*[:\s]*([\s\S]{0,150}?)(?=24\.\s*Asuransi|25\.\s*Freight|26\.\s*Nilai\s*Pabean|\n\n)/i);
-  if (f23raw) {
-    const nums = [...f23raw[1].matchAll(/\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?/g)]
-      .map(mx => parsePibNum(mx[0])).filter(n => n > 1000);
-    if (nums.length) out.nilai_fob = Math.max(...nums);
-  }
-  // Strategi 2: pola "23. Nilai :" langsung diikuti angka
-  if (!out.nilai_fob) {
-    const f23direct = t.match(/23\.\s*Nilai\s*[:\s]*([\d]{1,3}(?:[.,][\d]{3})+(?:[.,]\d{2})?)/i);
-    if (f23direct) out.nilai_fob = parsePibNum(f23direct[1]);
-  }
-  // Strategi 3: "FOB" dekat angka besar — untuk PDF yang menaruh "FOB" sebelum nilai
-  if (!out.nilai_fob) {
-    const fobNear = t.match(/FOB[\s\S]{0,80}?([\d]{1,3}(?:[.,][\d]{3})+(?:[.,]\d{2})?)/i)
-                 || t.match(/([\d]{1,3}(?:[.,][\d]{3})+(?:[.,]\d{2})?)[\s\S]{0,30}FOB/i);
-    if (fobNear && fobNear[1]) out.nilai_fob = parsePibNum(fobNear[1]);
-  }
-
-  // ── Asuransi (field 24) ──
-  const asuransiM = t.match(/24\.\s*Asuransi[^:]*[:\s]*([\d.,]+)/i)
-                  || t.match(/Asuransi\/LDN\s*[:\s]*([\d.,]+)/i)
-                  || t.match(/Asuransi[^:]*[:\s]*([\d.,]+)/i);
-  if (asuransiM) out.nilai_asuransi = parsePibNum(asuransiM[1]);
-
-  // ── Freight (field 25) ──
-  const freightM = t.match(/25\.\s*Freight\s*[:\s]*([\d.,]+)/i)
-                || t.match(/Freight\s*[:\s]*([\d.,]+)/i);
-  if (freightM) out.nilai_freight = parsePibNum(freightM[1]);
-
-  // ── Nilai Pabean (field 26) ──
-  const nilaiMatch = t.match(/26\.\s*Nilai\s*Pabean[\s\S]{0,60}?([\d.,]+)/i)
-                  || t.match(/Nilai\s*Pabean\s*[:\s]*([\d.,]+)/i);
-  if (nilaiMatch) out.nilai_pabean = parsePibNum(nilaiMatch[1]);
-  const idrMatch = t.match(/RP\s+([\d.,]+)/i);
-  if (idrMatch) out.nilai_pabean_idr = parsePibNum(idrMatch[1]);
-
-  // ── PPN & PPh ──
-  const ppnM = t.match(/PPN[^\d]*([\d.,]+)\s+0\.00\s+0\.00/i);
-  if (ppnM) out.total_ppn = parsePibNum(ppnM[1]);
-  const pphM = t.match(/PPh[^\d]*([\d.,]+)\s+0\.00/i);
-  if (pphM) out.total_pph = parsePibNum(pphM[1]);
-
-  // ── Supplier ──
-  const suppM = t.match(/PENGIRIM[\s\S]*?Nama.*?:\s*([A-Z][A-Z &.]+(?:INC|CO|LTD|CORP)[A-Z., ]*)/i);
-  if (suppM) out.supplier = suppM[1].trim();
-
-  // ── Invoice reference ──
-  const invM = t.match(/Invoice\s*[:\s]*No\.?\s*([A-Z0-9\-]+)/i);
-  if (invM) out.invoice_reference = invM[1];
-
-  return out;
-}
-
-function parsePibNum(v) {
+function parseMoneyNum(v) {
   if (!v && v !== 0) return 0;
-  const s = String(v).replace(/\s/g,'').replace(/[RP]/gi,'');
+  const s = String(v).replace(/\s/g, '').replace(/[A-Za-z]/g, '');
   // Indonesian/European dot-thousands: 8.566.600,00 → 8566600
   if (/^\d{1,3}(\.\d{3})+(?:,\d+)?$/.test(s)) {
-    return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+    return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
   }
-  return parseFloat(s.replace(/,/g,'')) || 0;
+  return parseFloat(s.replace(/,/g, '')) || 0;
 }
 
-// ── PIB Excel Parser ──────────────────────────────────────────
-async function parsePibExcel(file) {
-  const ab  = await file.arrayBuffer();
-  const wb  = window.XLSX.read(ab, { type:'array' });
-  const ws  = wb.Sheets[wb.SheetNames[0]];
-  const rows = window.XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
-  const flat = rows.flat().join(' ');
-
-  // Try to extract key fields from flat text
-  const out = parsePibHeuristic(flat);
-  out._source = 'excel';
-
-  // Also try sheet as key-value rows
-  rows.forEach(row => {
-    const k = String(row[0]||'').toLowerCase();
-    const v = row[1] || row[2] || '';
-    if (/nomor.pib|no.pib/i.test(k) && v) out.nomor_pib = String(v).trim();
-    if (/tanggal.pib|tgl.pib/i.test(k) && v) out.tanggal_pib = String(v).trim();
-    if (/currency|valuta/i.test(k) && v) out.currency_pib = String(v).trim().toUpperCase();
-    if (/fob|nilai.fob|total.value/i.test(k) && v) out.nilai_fob = parsePibNum(v);
-    if (/nilai.pabean/i.test(k) && v) out.nilai_pabean = parsePibNum(v);
-    if (/po.number|no.po/i.test(k) && v) out.po_reference = String(v).trim();
-  });
-  return out;
-}
-
-// ── VR State & Init ───────────────────────────────────────────
-let vrCurrentPib = null;   // PIB data being reviewed before save
-let vrEditingPibn = null;  // PIBN being edited
-
+// ── Init ──────────────────────────────────────────────────────
 function initValRecon() {
+  populateVrPoSelects();
+  vrRenderCiTable();
   renderVrTable();
-  populateVrPoSelect();
+  updateVrKpis();
 }
 
-function populateVrPoSelect() {
-  const sel = document.getElementById('vr-po-select');
+function populateVrPoSelects() {
+  ['vr-ci-po-select', 'vr-pay-po-select'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Pilih PO —</option>';
+    (MOCK_PO_DATA || []).forEach(po => {
+      const opt = document.createElement('option');
+      opt.value = po.poNumber;
+      opt.textContent = `${po.poNumber} · ${po.supplierLabel || po.supplier || '—'} · ${po.currency || '—'}`;
+      sel.appendChild(opt);
+    });
+    if (cur) sel.value = cur;
+  });
+}
+
+// ── CI Value Master ───────────────────────────────────────────
+function vrSaveCi() {
+  const poNumber = document.getElementById('vr-ci-po-select')?.value || '';
+  const ciNumber = (document.getElementById('vr-ci-number')?.value || '').trim();
+  const ciDate   = document.getElementById('vr-ci-date')?.value || '';
+  const currency = (document.getElementById('vr-ci-currency')?.value || '').trim().toUpperCase();
+  const valueRaw = document.getElementById('vr-ci-value')?.value || '';
+  const value    = parseMoneyNum(valueRaw);
+
+  if (!poNumber) { showToast('Pilih Nomor PO terlebih dahulu.', 'error'); return; }
+  if (!ciNumber) { showToast('Nomor CI wajib diisi.', 'error'); const el = document.getElementById('vr-ci-number'); if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); } return; }
+  if (!value)    { showToast('Value CI wajib diisi.', 'error'); return; }
+
+  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === poNumber);
+  const existing = CI_VALUES.findIndex(c => c.ciNumber === ciNumber);
+  const record = { poNumber, ciNumber, ciDate, currency: currency || (po?.currency || ''), value, supplier: po?.supplierLabel || po?.supplier || '—' };
+
+  if (existing >= 0) CI_VALUES[existing] = record;
+  else CI_VALUES.push(record);
+
+  vrLog('Simpan CI', `CI ${ciNumber} untuk PO ${poNumber} · Value ${value}`);
+  vrRenderCiTable();
+  populateVrCiSelectForPo(document.getElementById('vr-pay-po-select')?.value || '');
+  renderVrTable(); // refresh in case this CI is already referenced by a payment proof
+  updateVrKpis();
+
+  ['vr-ci-number', 'vr-ci-date', 'vr-ci-currency', 'vr-ci-value'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  showToast(`✓ Data CI ${ciNumber} disimpan.`, 'success');
+}
+
+function vrRenderCiTable() {
+  const tbody = document.getElementById('vr-ci-tbody');
+  if (!tbody) return;
+  if (!CI_VALUES.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada data CI. Tambahkan di atas.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = CI_VALUES.map((c, idx) => `
+    <tr>
+      <td style="font-family:monospace;font-size:12px">${c.poNumber}</td>
+      <td style="font-family:monospace;font-size:12px">${c.ciNumber}</td>
+      <td style="font-size:12px">${c.ciDate || '—'}</td>
+      <td class="num"><span class="badge" style="font-size:11px;background:var(--c-blue-bg);color:var(--c-blue-dark)">${c.currency || '—'}</span></td>
+      <td class="num">${(c.value || 0).toLocaleString()}</td>
+      <td><button class="btn-ghost btn-sm" onclick="vrDeleteCi(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
+    </tr>`).join('');
+}
+
+function vrDeleteCi(idx) {
+  const c = CI_VALUES[idx];
+  if (!c) return;
+  if (!confirm(`Hapus data CI ${c.ciNumber}?`)) return;
+  CI_VALUES.splice(idx, 1);
+  vrRenderCiTable();
+  populateVrCiSelectForPo(document.getElementById('vr-pay-po-select')?.value || '');
+  renderVrTable();
+  updateVrKpis();
+  showToast('Data CI dihapus.', 'success');
+}
+
+// ── Payment Proof: PO → CI cascading select ───────────────────
+function vrPayPoChanged() {
+  const poNumber = document.getElementById('vr-pay-po-select')?.value || '';
+  populateVrCiSelectForPo(poNumber);
+}
+
+function populateVrCiSelectForPo(poNumber) {
+  const sel = document.getElementById('vr-pay-ci-select');
   if (!sel) return;
   const cur = sel.value;
-  sel.innerHTML = '<option value="">— Pilih PO Number —</option>';
-  MOCK_PO_DATA.forEach(po => {
-    const opt = document.createElement('option');
-    opt.value = po.poNumber;
-    opt.textContent = `${po.poNumber} · ${po.supplierLabel||po.supplier||'—'} · ${po.currency||'—'} ${po.poValue ? Number(po.poValue).toLocaleString() : '—'}`;
-    sel.appendChild(opt);
-  });
-  if (cur) sel.value = cur;
+  if (!poNumber) {
+    sel.innerHTML = '<option value="">— Pilih PO terlebih dahulu —</option>';
+    return;
+  }
+  const options = CI_VALUES.filter(c => c.poNumber === poNumber);
+  if (!options.length) {
+    sel.innerHTML = '<option value="">— Belum ada CI untuk PO ini —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— Pilih CI —</option>' + options.map(c =>
+    `<option value="${c.ciNumber}">${c.ciNumber} · ${c.currency || '—'} ${Number(c.value || 0).toLocaleString()}</option>`
+  ).join('');
+  if (cur && options.some(c => c.ciNumber === cur)) sel.value = cur;
+}
+
+// ── Term Pembayaran toggle ─────────────────────────────────────
+function vrTermChanged() {
+  const term = document.getElementById('vr-pay-term')?.value;
+  const wrap = document.getElementById('vr-pay-term-manual-wrap');
+  if (wrap) wrap.style.display = term === 'manual' ? 'block' : 'none';
+}
+
+function vrGetTermPercent() {
+  const term = document.getElementById('vr-pay-term')?.value || '100';
+  if (term === 'manual') {
+    const manual = parseFloat(document.getElementById('vr-pay-term-manual')?.value || '0');
+    return { term: 'manual', percent: isNaN(manual) ? 0 : manual };
+  }
+  return { term, percent: parseFloat(term) };
 }
 
 // ── Reconciliation calculation ────────────────────────────────
-function calcVrStatus(rec) {
-  if (!rec.currencyPO || !rec.currencyPIB) return { status:'incomplete', label:'Incomplete' };
-  if (rec.currencyPO !== rec.currencyPIB) return { status:'currency-mismatch', label:'Currency Mismatch' };
-  const diff = Math.abs(rec.diff || 0);
-  if (diff === 0) return { status:'match', label:'Match' };
-  if (diff / (rec.valuePO||1) < 0.001) return { status:'match', label:'Match (~rounding)' };
-  return { status:'need-review', label:'Need Review' };
+function calcPayStatus(rec) {
+  const ci = CI_VALUES.find(c => c.ciNumber === rec.ciNumber && c.poNumber === rec.poNumber);
+  if (!ci) return { status: 'no-ci', label: 'CI Tidak Ditemukan' };
+  if (ci.currency && rec.currency && ci.currency !== rec.currency) return { status: 'currency-mismatch', label: 'Currency Mismatch' };
+  const expected = ci.value * ((rec.termPercent || 0) / 100);
+  const diff = (rec.value || 0) - expected;
+  const tolerance = Math.max(expected * 0.001, 1);
+  if (Math.abs(diff) <= tolerance) return { status: 'match', label: 'Match' };
+  if (diff < 0) return { status: 'kurang', label: 'Kurang Bayar' };
+  return { status: 'lebih', label: 'Lebih Bayar' };
+}
+
+function vrExpectedValue(rec) {
+  const ci = CI_VALUES.find(c => c.ciNumber === rec.ciNumber && c.poNumber === rec.poNumber);
+  if (!ci) return 0;
+  return ci.value * ((rec.termPercent || 0) / 100);
 }
 
 function vrStatusBadge(status, label) {
   const cls = {
-    'match':            'badge-green',
-    'need-review':      'badge-orange',
-    'currency-mismatch':'badge-red',
-    'incomplete':       'badge-gray',
+    'match': 'badge-green',
+    'kurang': 'badge-red',
+    'lebih': 'badge-orange',
+    'currency-mismatch': 'badge-red',
+    'no-ci': 'badge-gray',
   };
-  return `<span class="badge ${cls[status]||'badge-gray'}"><span class="badge-dot"></span>${label}</span>`;
+  return `<span class="badge ${cls[status] || 'badge-gray'}"><span class="badge-dot"></span>${label}</span>`;
 }
 
-// ── Render VR Table ───────────────────────────────────────────
+function vrTermLabel(rec) {
+  if (rec.term === 'manual') return `Manual (${rec.termPercent}%)`;
+  return `${rec.termPercent}%`;
+}
+
+// ── Render Reconciliation Table ────────────────────────────────
 function renderVrTable(filter = '') {
   const tbody = document.getElementById('vr-tbody');
   if (!tbody) return;
-  const rows = filter ? VR_DATA.filter(r =>
-    r.poNumber.includes(filter) || (r.pibn||'').includes(filter) ||
-    (r.supplier||'').toUpperCase().includes(filter.toUpperCase())
-  ) : VR_DATA;
+  const rows = filter ? PAYMENT_PROOFS.filter(r =>
+    (r.poNumber || '').toUpperCase().includes(filter.toUpperCase()) ||
+    (r.ciNumber || '').toUpperCase().includes(filter.toUpperCase())
+  ) : PAYMENT_PROOFS;
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:32px;color:var(--c-text-hint)">
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--c-text-hint)">
       <i class="ti ti-inbox" style="font-size:28px;display:block;margin-bottom:8px"></i>
-      Belum ada data rekonsiliasi. Tambah PIB pada form di bawah.
+      Belum ada data rekonsiliasi. Tambah data CI, lalu input Bukti Pembayaran pada form di bawah.
     </td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map((r, idx) => {
-    const { status, label } = calcVrStatus(r);
-    const diff = (r.valuePIB||0) - (r.valuePO||0);
-    const diffStr = diff === 0 ? '<span class="sel-zero">0</span>'
+  tbody.innerHTML = PAYMENT_PROOFS.map((r, idx) => {
+    if (filter && !rows.includes(r)) return '';
+    const { status, label } = calcPayStatus(r);
+    const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
+    const expected = vrExpectedValue(r);
+    const diff = (r.value || 0) - expected;
+    const diffStr = !ci ? '—' : diff === 0 ? '<span class="sel-zero">0</span>'
       : diff > 0 ? `<span class="sel-pos">+${diff.toLocaleString()}</span>`
       : `<span class="sel-neg">${diff.toLocaleString()}</span>`;
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${r.poNumber}</td>
-      <td style="font-size:12px">${r.supplier||'—'}</td>
-      <td style="font-family:monospace;font-size:12px">${r.pibn||'—'}</td>
-      <td style="font-size:12px">${r.pibDate||'—'}</td>
-      <td class="num"><span class="badge" style="font-size:11px;background:var(--c-blue-bg);color:var(--c-blue-dark)">${r.currencyPO||'—'}</span></td>
-      <td class="num"><span class="badge" style="font-size:11px;${r.currencyPO!==r.currencyPIB?'background:rgba(239,68,68,.1);color:#dc2626':'background:var(--c-surface-2)'}">${r.currencyPIB||'—'}</span></td>
-      <td class="num">${(r.valuePO||0).toLocaleString()}</td>
-      <td class="num">${(r.valuePIB||0).toLocaleString()}</td>
+      <td style="font-family:monospace;font-size:12px">${r.ciNumber || '—'}</td>
+      <td style="font-size:12px">${vrTermLabel(r)}</td>
+      <td class="num">${ci ? (ci.value || 0).toLocaleString() : '—'}</td>
+      <td class="num">${ci ? expected.toLocaleString() : '—'}</td>
+      <td style="font-size:12px">${r.tanggal || '—'}</td>
+      <td class="num">${(r.value || 0).toLocaleString()}</td>
       <td class="num">${diffStr}</td>
       <td>${vrStatusBadge(status, label)}</td>
-      <td>
-        <button class="btn-ghost btn-sm" onclick="vrShowDetail(${idx})"><i class="ti ti-eye"></i></button>
-        <button class="btn-ghost btn-sm" onclick="vrDelete(${idx})" title="Hapus"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button>
-      </td>
+      <td><button class="btn-ghost btn-sm" onclick="vrShowDetail(${idx})"><i class="ti ti-eye"></i></button>
+          <button class="btn-ghost btn-sm" onclick="vrDelete(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
     </tr>`;
-  }).join('');
+  }).join('') || `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--c-text-hint)">Tidak ada data untuk pencarian ini.</td></tr>`;
 
-  // Update KPI
-  const total  = VR_DATA.length;
-  const match  = VR_DATA.filter(r => calcVrStatus(r).status === 'match').length;
-  const review = VR_DATA.filter(r => calcVrStatus(r).status === 'need-review').length;
-  const cmis   = VR_DATA.filter(r => calcVrStatus(r).status === 'currency-mismatch').length;
-  const setEl  = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v; };
+  updateVrKpis();
+}
+
+function updateVrKpis() {
+  const total  = PAYMENT_PROOFS.length;
+  const match  = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'match').length;
+  const kurang = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'kurang').length;
+  const lebih  = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'lebih').length;
+  const setEl  = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   setEl('vr-kpi-total', total);
   setEl('vr-kpi-match', match);
-  setEl('vr-kpi-review', review);
-  setEl('vr-kpi-currency', cmis);
+  setEl('vr-kpi-kurang', kurang);
+  setEl('vr-kpi-lebih', lebih);
 }
 
 // ── VR Detail Modal ───────────────────────────────────────────
 function vrShowDetail(idx) {
-  const r = VR_DATA[idx];
+  const r = PAYMENT_PROOFS[idx];
   if (!r) return;
-  const { status, label } = calcVrStatus(r);
-  const diff = (r.valuePIB||0) - (r.valuePO||0);
-  const po = MOCK_PO_DATA.find(p => p.poNumber === r.poNumber);
+  const { status, label } = calcPayStatus(r);
+  const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
+  const expected = vrExpectedValue(r);
+  const diff = (r.value || 0) - expected;
+  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === r.poNumber);
 
   const modal = document.getElementById('vr-detail-modal');
   document.getElementById('vr-detail-content').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
       <div class="form-card" style="margin:0">
-        <div class="form-card-title" style="font-size:13px"><i class="ti ti-file-text"></i> Data PO</div>
+        <div class="form-card-title" style="font-size:13px"><i class="ti ti-file-invoice"></i> Data CI (Acuan)</div>
         <table class="data-table" style="font-size:13px">
           <tr><td style="color:var(--c-text-hint)">PO Number</td><td><strong>${r.poNumber}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Vendor</td><td>${r.supplier||'—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Currency PO</td><td><span class="badge badge-blue">${r.currencyPO||'—'}</span></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Total Value PO</td><td><strong>${(r.valuePO||0).toLocaleString()}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">PO Date</td><td>${po?.poDate||'—'}</td></tr>
+          <tr><td style="color:var(--c-text-hint)">Vendor</td><td>${po?.supplierLabel || po?.supplier || '—'}</td></tr>
+          <tr><td style="color:var(--c-text-hint)">Nomor CI</td><td><strong>${r.ciNumber || '—'}</strong></td></tr>
+          <tr><td style="color:var(--c-text-hint)">Currency CI</td><td><span class="badge badge-blue">${ci?.currency || '—'}</span></td></tr>
+          <tr><td style="color:var(--c-text-hint)">Value CI</td><td><strong>${ci ? (ci.value || 0).toLocaleString() : '—'}</strong></td></tr>
+          <tr><td style="color:var(--c-text-hint)">Term Pembayaran</td><td>${vrTermLabel(r)}</td></tr>
+          <tr><td style="color:var(--c-text-hint)">Expected Value</td><td><strong>${ci ? expected.toLocaleString() : '—'}</strong></td></tr>
         </table>
       </div>
       <div class="form-card" style="margin:0">
-        <div class="form-card-title" style="font-size:13px"><i class="ti ti-file-invoice"></i> Data PIB</div>
+        <div class="form-card-title" style="font-size:13px"><i class="ti ti-receipt"></i> Data Payment Proof</div>
         <table class="data-table" style="font-size:13px">
-          <tr><td style="color:var(--c-text-hint)">Nomor PIB</td><td><strong>${r.pibn||'—'}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Nomor Pengajuan</td><td style="font-size:11px;font-family:monospace">${r.nomorPengajuan||'—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Tanggal PIB</td><td>${r.pibDate||'—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Currency PIB</td><td><span class="badge ${r.currencyPO!==r.currencyPIB?'badge-red':'badge-green'}">${r.currencyPIB||'—'}</span></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Total FOB PIB</td><td><strong>${(r.valuePIB||0).toLocaleString()}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Nilai Pabean IDR</td><td>Rp ${(r.nilaiPabeanIDR||0).toLocaleString()}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">NDPBM</td><td>${r.ndpbm||'—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Invoice Ref</td><td style="font-family:monospace;font-size:12px">${r.invoiceRef||'—'}</td></tr>
+          <tr><td style="color:var(--c-text-hint)">Tanggal Bayar</td><td>${r.tanggal || '—'}</td></tr>
+          <tr><td style="color:var(--c-text-hint)">Currency Bayar</td><td><span class="badge ${ci && ci.currency !== r.currency ? 'badge-red' : 'badge-green'}">${r.currency || '—'}</span></td></tr>
+          <tr><td style="color:var(--c-text-hint)">Value Dibayar</td><td><strong>${(r.value || 0).toLocaleString()}</strong></td></tr>
+          <tr><td style="color:var(--c-text-hint)">Referensi</td><td style="font-family:monospace;font-size:12px">${r.reference || '—'}</td></tr>
         </table>
       </div>
     </div>
 
     <!-- Reconciliation Summary -->
-    <div class="form-card" style="margin:0 0 16px;border-left:3px solid ${status==='match'?'var(--c-green,#22c55e)':status==='currency-mismatch'?'#ef4444':'#f97316'}">
+    <div class="form-card" style="margin:0 0 16px;border-left:3px solid ${status === 'match' ? 'var(--c-green,#22c55e)' : (status === 'currency-mismatch' || status === 'no-ci') ? '#ef4444' : status === 'kurang' ? '#ef4444' : '#f97316'}">
       <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
         <div>${vrStatusBadge(status, label)}</div>
-        <div style="font-size:13px"><span style="color:var(--c-text-hint)">Selisih:</span> <strong style="color:${diff===0?'var(--c-green,#22c55e)':diff>0?'var(--c-blue)':'#ef4444'}">${diff===0?'0':diff>0?'+'+diff.toLocaleString():diff.toLocaleString()} ${r.currencyPO||''}</strong></div>
-        ${r.currencyPO!==r.currencyPIB?`<div class="hint-box" style="background:rgba(239,68,68,.08);border-color:#ef4444;color:#dc2626;padding:6px 12px;font-size:12px"><i class="ti ti-alert-triangle"></i> Currency Mismatch: PO dalam ${r.currencyPO}, PIB dalam ${r.currencyPIB}. Perlu pengecekan lebih lanjut.</div>`:''}
+        <div style="font-size:13px"><span style="color:var(--c-text-hint)">Selisih:</span> <strong style="color:${diff === 0 ? 'var(--c-green,#22c55e)' : diff > 0 ? 'var(--c-blue)' : '#ef4444'}">${!ci ? '—' : diff === 0 ? '0' : diff > 0 ? '+' + diff.toLocaleString() : diff.toLocaleString()} ${r.currency || ''}</strong></div>
+        ${ci && ci.currency !== r.currency ? `<div class="hint-box" style="background:rgba(239,68,68,.08);border-color:#ef4444;color:#dc2626;padding:6px 12px;font-size:12px"><i class="ti ti-alert-triangle"></i> Currency Mismatch: CI dalam ${ci.currency}, Payment Proof dalam ${r.currency}.</div>` : ''}
+        ${!ci ? `<div class="hint-box" style="background:rgba(239,68,68,.08);border-color:#ef4444;color:#dc2626;padding:6px 12px;font-size:12px"><i class="ti ti-alert-triangle"></i> Nomor CI ${r.ciNumber || '(kosong)'} belum terdaftar di Data Nilai CI untuk PO ${r.poNumber}.</div>` : ''}
       </div>
     </div>
 
@@ -2707,16 +2661,16 @@ function vrShowDetail(idx) {
     <div class="form-card" style="margin:0 0 16px">
       <div class="form-card-title" style="font-size:13px"><i class="ti ti-message"></i> Catatan / Komentar</div>
       <textarea id="vr-detail-comment" style="width:100%;min-height:72px;padding:8px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;resize:vertical;font-family:inherit"
-        placeholder="Tambah catatan penyebab selisih atau keterangan lainnya...">${r.comment||''}</textarea>
+        placeholder="Tambah catatan penyebab selisih atau keterangan lainnya...">${r.comment || ''}</textarea>
       <button class="btn-primary btn-sm" style="margin-top:8px" onclick="vrSaveComment(${idx})"><i class="ti ti-check"></i> Simpan Catatan</button>
     </div>
 
     <!-- Audit Trail -->
     <div class="form-card" style="margin:0">
       <div class="form-card-title" style="font-size:13px"><i class="ti ti-history"></i> Audit Trail</div>
-      ${(r.auditTrail||[]).length ? `<table class="data-table" style="font-size:12px">
+      ${(r.auditTrail || []).length ? `<table class="data-table" style="font-size:12px">
         <thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Detail</th></tr></thead>
-        <tbody>${(r.auditTrail||[]).map(a=>`<tr>
+        <tbody>${(r.auditTrail || []).map(a => `<tr>
           <td style="color:var(--c-text-hint);white-space:nowrap">${new Date(a.ts).toLocaleString('id-ID')}</td>
           <td>${a.user}</td><td>${a.action}</td><td style="font-size:11px">${a.detail}</td>
         </tr>`).join('')}</tbody>
@@ -2727,12 +2681,12 @@ function vrShowDetail(idx) {
 }
 
 function vrSaveComment(idx) {
-  const r = VR_DATA[idx];
+  const r = PAYMENT_PROOFS[idx];
   if (!r) return;
   const comment = document.getElementById('vr-detail-comment')?.value.trim() || '';
   r.comment = comment;
   r.auditTrail = r.auditTrail || [];
-  r.auditTrail.unshift(vrLog('Komentar', comment.slice(0,80)));
+  r.auditTrail.unshift(vrLog('Komentar', comment.slice(0, 80)));
   showToast('Catatan disimpan.', 'success');
 }
 
@@ -2744,23 +2698,88 @@ function vrCloseDetail() {
 
 function vrDelete(idx) {
   if (!confirm('Hapus data rekonsiliasi ini?')) return;
-  VR_DATA.splice(idx, 1);
+  PAYMENT_PROOFS.splice(idx, 1);
   renderVrTable();
   showToast('Data dihapus.', 'success');
 }
 
-// ── PIB Upload handlers ───────────────────────────────────────
-function handleVrPibDrop(event) {
-  event.preventDefault();
-  document.getElementById('vr-pib-drop-zone').classList.remove('dragover');
-  const file = event.dataTransfer.files[0];
-  if (file) handleVrPibUpload(file);
+// ── Payment Proof Upload (optional AI-assisted) ────────────────
+const PAYMENT_PROOF_SYSTEM_PROMPT = `You are a payment proof / bank transfer receipt data extraction assistant.
+Extract key data from a bank transfer receipt or payment proof document and return ONLY valid JSON.
+
+JSON structure:
+{
+  "tanggal": "",
+  "value": 0,
+  "currency": "",
+  "reference": "",
+  "po_reference": null,
+  "ci_reference": null
 }
 
-async function handleVrPibUpload(file) {
+EXTRACTION RULES:
+1. tanggal: transaction/transfer date, convert to YYYY-MM-DD.
+2. value: the transferred amount (numeric only, no currency symbol/thousand separators).
+3. currency: 3-letter currency code (e.g. USD, IDR, JPY). If not explicit, infer from symbol (Rp → IDR, $ → USD).
+4. reference: bank reference / transaction number if present.
+5. po_reference: any PO number mentioned (e.g. "SBI/PO/...").
+6. ci_reference: any CI / invoice number mentioned.
+
+Return ONLY valid JSON, no explanation.`;
+
+async function parsePaymentProofWithAI(text) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1000,
+      system: PAYMENT_PROOF_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: `Extract payment proof data from the following text. Return ONLY valid JSON.\n\nTEXT:\n${text}` }]
+    })
+  });
+  const data = await response.json();
+  if (data.error) throw new Error(data.error.message);
+  const raw = data.content.map(b => b.text || '').join('');
+  return JSON.parse(raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim());
+}
+
+function parsePaymentProofHeuristic(text) {
+  const t = text.replace(/\r/g, '');
+  const out = { tanggal: null, value: 0, currency: '', reference: null, po_reference: null, ci_reference: null };
+
+  const tglMatch = t.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (tglMatch) out.tanggal = `${tglMatch[3]}-${tglMatch[2]}-${tglMatch[1]}`;
+
+  const curMatch = t.match(/\b(USD|IDR|JPY|EUR|KRW|SGD)\b/i) || (/Rp\s?\d/i.test(t) ? ['', 'IDR'] : null);
+  if (curMatch) out.currency = curMatch[1].toUpperCase();
+
+  const amountMatch = t.match(/(?:Rp|USD|IDR|JPY|EUR)?\s?([\d]{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?)/i);
+  if (amountMatch) out.value = parseMoneyNum(amountMatch[1]);
+
+  const refMatch = t.match(/(?:Ref(?:erence)?|No\.?\s*Ref)\s*[:\s]*([A-Z0-9\-]+)/i);
+  if (refMatch) out.reference = refMatch[1];
+
+  const poMatch = t.match(/\b(SBI\/[A-Z0-9\/]+|PO[-\s]?\d{3,})/i);
+  if (poMatch) out.po_reference = poMatch[1];
+
+  const ciMatch = t.match(/\bCI[-\s]?[A-Z0-9\-]+/i);
+  if (ciMatch) out.ci_reference = ciMatch[0];
+
+  return out;
+}
+
+function handleVrPayDrop(event) {
+  event.preventDefault();
+  document.getElementById('vr-pay-drop-zone').classList.remove('dragover');
+  const file = event.dataTransfer.files[0];
+  if (file) handleVrPayUpload(file);
+}
+
+async function handleVrPayUpload(file) {
   if (!file) return;
-  const dropContent = document.getElementById('vr-pib-drop-content');
-  const loading     = document.getElementById('vr-pib-loading');
+  const dropContent = document.getElementById('vr-pay-drop-content');
+  const loading     = document.getElementById('vr-pay-loading');
   dropContent.style.display = 'none';
   loading.style.display     = 'block';
 
@@ -2768,115 +2787,150 @@ async function handleVrPibUpload(file) {
     const ext = file.name.split('.').pop().toLowerCase();
     let parsed;
     if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
-      parsed = await parsePibExcel(file);
+      const ab = await file.arrayBuffer();
+      const wb = window.XLSX.read(ab, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      const flat = rows.flat().join(' ');
+      parsed = parsePaymentProofHeuristic(flat);
       parsed._source = 'excel';
     } else {
       const pdfText = await extractTextFromPdf(file);
       try {
-        parsed = await parsePibWithAI(pdfText);
+        parsed = await parsePaymentProofWithAI(pdfText);
         parsed._source = 'ai-pdf';
-      } catch(e) {
-        parsed = parsePibHeuristic(pdfText);
+      } catch (e) {
+        parsed = parsePaymentProofHeuristic(pdfText);
         parsed._source = 'heuristic-pdf';
       }
     }
-    vrCurrentPib = parsed;
-    vrFillReviewForm(parsed);
-    showToast(`✓ PIB terbaca (${parsed._source}). Cek & simpan data di bawah.`, 'success');
-  } catch(err) {
-    showToast('Gagal membaca PIB: ' + err.message, 'error');
+    vrCurrentPay = parsed;
+    vrFillPayReviewForm(parsed);
+    showToast(`✓ Bukti pembayaran terbaca (${parsed._source}). Cek & lengkapi data di bawah.`, 'success');
+  } catch (err) {
+    showToast('Gagal membaca bukti pembayaran: ' + err.message, 'error');
   } finally {
     loading.style.display = 'none';
     dropContent.style.display = 'block';
   }
 }
 
-function vrFillReviewForm(d) {
-  setField('vr-pibn',          d.nomor_pib);
-  setField('vr-pib-date',      d.tanggal_pib);
-  setField('vr-pib-currency',  d.currency_pib);
-  setField('vr-pib-fob',       d.nilai_fob || d.nilai_pabean);
-  setField('vr-pib-ndpbm',     d.ndpbm);
-  setField('vr-pib-idr',       d.nilai_pabean_idr);
-  setField('vr-pib-invoice',   d.invoice_reference);
-  setField('vr-pib-pengajuan', d.nomor_pengajuan);
-  // Auto-match PO
+function vrFillPayReviewForm(d) {
+  setField('vr-pay-date', d.tanggal);
+  setField('vr-pay-value', d.value);
+  setField('vr-pay-currency', d.currency);
+  setField('vr-pay-ref', d.reference);
+
   if (d.po_reference) {
-    const sel = document.getElementById('vr-po-select');
-    const match = MOCK_PO_DATA.find(p => p.poNumber === d.po_reference);
-    if (match && sel) sel.value = match.poNumber;
+    const sel = document.getElementById('vr-pay-po-select');
+    const match = (MOCK_PO_DATA || []).find(p => p.poNumber === d.po_reference);
+    if (match && sel) { sel.value = match.poNumber; vrPayPoChanged(); }
   }
-  // Show review panel (tanpa item list)
-  document.getElementById('vr-review-panel').style.display = 'block';
-  const fw = document.getElementById('vr-pib-items-wrap');
-  if (fw) fw.innerHTML = '';
-  vrLog('Upload PIB', `File PIB dibaca: ${d.nomor_pib||'?'}, source: ${d._source}`);
+  if (d.ci_reference) {
+    const sel = document.getElementById('vr-pay-ci-select');
+    if (sel && [...sel.options].some(o => o.value === d.ci_reference)) sel.value = d.ci_reference;
+  }
 }
 
-function vrRenderPibItems(items) {
-  // Item list tidak ditampilkan — rekonsiliasi hanya berdasarkan nilai FOB field 23 vs nilai PO
-  const wrap = document.getElementById('vr-pib-items-wrap');
-  if (wrap) wrap.innerHTML = '';
-}
-
-// ── Save VR Record ────────────────────────────────────────────
+// ── Save Payment Proof / Reconciliation ────────────────────────
 function vrSave() {
-  const poNumber = document.getElementById('vr-po-select')?.value;
-  if (!poNumber) { showToast('Pilih PO terlebih dahulu.', 'error'); return; }
+  const btn = document.getElementById('vr-save-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin .6s linear infinite"></i> Menyimpan…'; }
 
-  const pibn      = document.getElementById('vr-pibn')?.value.trim();
-  const pibDate   = document.getElementById('vr-pib-date')?.value.trim();
-  const currPIB   = (document.getElementById('vr-pib-currency')?.value || '').trim().toUpperCase();
-  const valuePIB  = parsePibNum(document.getElementById('vr-pib-fob')?.value || '0');
-  const ndpbm     = parsePibNum(document.getElementById('vr-pib-ndpbm')?.value || '0');
-  const nilaiIDR  = parsePibNum(document.getElementById('vr-pib-idr')?.value || '0');
-  const invoiceRef= document.getElementById('vr-pib-invoice')?.value.trim() || '';
-  const noPengajuan= document.getElementById('vr-pib-pengajuan')?.value.trim() || '';
+  try {
+    const poNumber = document.getElementById('vr-pay-po-select')?.value || '';
+    if (!poNumber) {
+      showToast('Pilih Nomor PO yang dituju terlebih dahulu.', 'error');
+      const sel = document.getElementById('vr-pay-po-select');
+      if (sel) { sel.style.borderColor = '#ef4444'; setTimeout(() => sel.style.borderColor = '', 2000); }
+      return;
+    }
 
-  if (!pibn) { showToast('Nomor PIB harus diisi.', 'error'); return; }
+    const ciNumber = document.getElementById('vr-pay-ci-select')?.value || '';
+    if (!ciNumber) {
+      showToast('Pilih Nomor CI yang dituju terlebih dahulu.', 'error');
+      const sel = document.getElementById('vr-pay-ci-select');
+      if (sel) { sel.style.borderColor = '#ef4444'; setTimeout(() => sel.style.borderColor = '', 2000); }
+      return;
+    }
 
-  const po      = MOCK_PO_DATA.find(p => p.poNumber === poNumber);
-  const valuePO = po ? Number(po.poValue||0) : 0;
-  const currPO  = po ? (po.currency||'USD') : 'USD';
-  const diff    = valuePIB - valuePO;
+    const tanggal = document.getElementById('vr-pay-date')?.value || '';
+    if (!tanggal) {
+      showToast('Tanggal payment proof wajib diisi.', 'error');
+      const el = document.getElementById('vr-pay-date');
+      if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); }
+      return;
+    }
 
-  const existing = VR_DATA.findIndex(r => r.pibn === pibn);
-  const audit    = [vrLog('Simpan PIB', `PIB ${pibn} disimpan untuk PO ${poNumber}`)];
+    const valueRaw = document.getElementById('vr-pay-value')?.value || '';
+    const value = parseMoneyNum(valueRaw);
+    if (!value) {
+      showToast('Value payment proof wajib diisi.', 'error');
+      const el = document.getElementById('vr-pay-value');
+      if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); }
+      return;
+    }
 
-  const record = {
-    poNumber, pibn, pibDate, currencyPO: currPO, currencyPIB: currPIB,
-    valuePO, valuePIB, diff, ndpbm,
-    nilaiPabeanIDR: nilaiIDR, invoiceRef, nomorPengajuan: noPengajuan,
-    supplier: po?.supplierLabel || po?.supplier || '—',
-    comment: '',
-    auditTrail: audit, _savedAt: new Date().toISOString(),
-  };
+    const { term, percent } = vrGetTermPercent();
+    if (!percent) {
+      showToast('Isi persentase term pembayaran (manual) terlebih dahulu.', 'error');
+      return;
+    }
 
-  if (existing >= 0) {
-    record.auditTrail = [...audit, ...(VR_DATA[existing].auditTrail||[])];
-    record.comment = VR_DATA[existing].comment || '';
-    VR_DATA[existing] = record;
-  } else {
-    VR_DATA.push(record);
+    const currency  = (document.getElementById('vr-pay-currency')?.value || '').trim().toUpperCase();
+    const reference = (document.getElementById('vr-pay-ref')?.value || '').trim();
+
+    const ci = CI_VALUES.find(c => c.ciNumber === ciNumber && c.poNumber === poNumber);
+    const audit = [vrLog('Simpan Payment Proof', `Payment ${value} (${currency || '—'}) untuk PO ${poNumber} / CI ${ciNumber} · Term ${term === 'manual' ? percent + '% manual' : percent + '%'}`)];
+
+    const record = {
+      poNumber, ciNumber, tanggal, value,
+      currency: currency || (ci?.currency || ''),
+      term, termPercent: percent,
+      reference,
+      comment: '',
+      auditTrail: audit,
+      _savedAt: new Date().toISOString(),
+    };
+
+    PAYMENT_PROOFS.push(record);
+    renderVrTable();
+    vrResetForm();
+
+    const { label } = calcPayStatus(record);
+    showToast(`✓ Rekonsiliasi disimpan — Status: ${label}`, 'success');
+    const vrCard = document.getElementById('vr-tbody')?.closest('.form-card');
+    if (vrCard && typeof vrCard.scrollIntoView === 'function') vrCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (err) {
+    console.error('vrSave error:', err);
+    showToast('Error saat menyimpan: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi'; }
   }
-
-  renderVrTable();
-  vrResetForm();
-  const {status, label} = calcVrStatus(record);
-  showToast(`✓ Rekonsiliasi disimpan — Status: ${label}`, 'success');
-  // Scroll to table
-  document.getElementById('vr-tbody')?.closest('.form-card')?.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 function vrResetForm() {
-  ['vr-pibn','vr-pib-date','vr-pib-currency','vr-pib-fob','vr-pib-ndpbm','vr-pib-idr','vr-pib-invoice','vr-pib-pengajuan'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.value = '';
+  ['vr-pay-date', 'vr-pay-value', 'vr-pay-currency', 'vr-pay-term-manual', 'vr-pay-ref'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; el.style.borderColor = ''; }
   });
-  const sel = document.getElementById('vr-po-select'); if(sel) sel.value = '';
-  const rp  = document.getElementById('vr-review-panel'); if(rp) rp.style.display = 'none';
-  const fw  = document.getElementById('vr-pib-items-wrap'); if(fw) fw.innerHTML = '';
-  const fi  = document.getElementById('vr-pib-file'); if(fi) fi.value = '';
-  vrCurrentPib = null;
+  const term = document.getElementById('vr-pay-term');
+  if (term) term.value = '50';
+  vrTermChanged();
+
+  const poSel = document.getElementById('vr-pay-po-select');
+  if (poSel) { poSel.value = ''; poSel.style.borderColor = ''; }
+  populateVrCiSelectForPo('');
+  const ciSel = document.getElementById('vr-pay-ci-select');
+  if (ciSel) ciSel.style.borderColor = '';
+
+  const fi = document.getElementById('vr-pay-file');       if (fi) fi.value = '';
+  const dc = document.getElementById('vr-pay-drop-content'); if (dc) dc.style.display = 'block';
+  const dl = document.getElementById('vr-pay-loading');      if (dl) dl.style.display = 'none';
+  const pv = document.getElementById('vr-pay-preview');      if (pv) pv.innerHTML = '';
+
+  vrCurrentPay = null;
 }
 
 function vrFilterTable() {
@@ -2888,51 +2942,32 @@ function vrFilterStatus() {
   const status = document.getElementById('vr-status-filter')?.value || '';
   if (!status) { renderVrTable(); return; }
   const tbody = document.getElementById('vr-tbody');
-  const rows = VR_DATA.filter(r => calcVrStatus(r).status === status);
-  // Re-render with filtered rows
-  const filtered = VR_DATA.map((r,i)=>({...r,_idx:i})).filter(r => calcVrStatus(r).status === status);
+  const filtered = PAYMENT_PROOFS.map((r, i) => ({ ...r, _idx: i })).filter(r => calcPayStatus(r).status === status);
   if (!tbody) return;
   tbody.innerHTML = filtered.map(r => {
     const idx = r._idx;
-    const {status:s, label} = calcVrStatus(r);
-    const diff = (r.valuePIB||0) - (r.valuePO||0);
-    const ds = diff===0?'<span class="sel-zero">0</span>':diff>0?`<span class="sel-pos">+${diff.toLocaleString()}</span>`:`<span class="sel-neg">${diff.toLocaleString()}</span>`;
+    const { status: s, label } = calcPayStatus(r);
+    const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
+    const expected = vrExpectedValue(r);
+    const diff = (r.value || 0) - expected;
+    const diffStr = !ci ? '—' : diff === 0 ? '<span class="sel-zero">0</span>'
+      : diff > 0 ? `<span class="sel-pos">+${diff.toLocaleString()}</span>`
+      : `<span class="sel-neg">${diff.toLocaleString()}</span>`;
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${r.poNumber}</td>
-      <td style="font-size:12px">${r.supplier||'—'}</td>
-      <td style="font-family:monospace;font-size:12px">${r.pibn||'—'}</td>
-      <td style="font-size:12px">${r.pibDate||'—'}</td>
-      <td class="num"><span class="badge" style="font-size:11px;background:var(--c-blue-bg);color:var(--c-blue-dark)">${r.currencyPO||'—'}</span></td>
-      <td class="num"><span class="badge" style="font-size:11px;${r.currencyPO!==r.currencyPIB?'background:rgba(239,68,68,.1);color:#dc2626':'background:var(--c-surface-2)'}">${r.currencyPIB||'—'}</span></td>
-      <td class="num">${(r.valuePO||0).toLocaleString()}</td>
-      <td class="num">${(r.valuePIB||0).toLocaleString()}</td>
-      <td class="num">${ds}</td>
+      <td style="font-family:monospace;font-size:12px">${r.ciNumber || '—'}</td>
+      <td style="font-size:12px">${vrTermLabel(r)}</td>
+      <td class="num">${ci ? (ci.value || 0).toLocaleString() : '—'}</td>
+      <td class="num">${ci ? expected.toLocaleString() : '—'}</td>
+      <td style="font-size:12px">${r.tanggal || '—'}</td>
+      <td class="num">${(r.value || 0).toLocaleString()}</td>
+      <td class="num">${diffStr}</td>
       <td>${vrStatusBadge(s, label)}</td>
       <td><button class="btn-ghost btn-sm" onclick="vrShowDetail(${idx})"><i class="ti ti-eye"></i></button>
           <button class="btn-ghost btn-sm" onclick="vrDelete(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--c-text-hint)">Tidak ada data untuk filter ini.</td></tr>`;
+  }).join('') || `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--c-text-hint)">Tidak ada data untuk filter ini.</td></tr>`;
 }
-
-// ── VR PO Select live preview ─────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  const poSel = document.getElementById('vr-po-select');
-  if (poSel) {
-    poSel.addEventListener('change', function() {
-      const po = MOCK_PO_DATA.find(p => p.poNumber === this.value);
-      const prev = document.getElementById('vr-po-preview');
-      if (!prev) return;
-      if (!po) { prev.innerHTML = ''; return; }
-      prev.innerHTML = `
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:var(--c-blue-bg,rgba(59,111,232,.06));border-radius:var(--border-radius-md);border:0.5px solid var(--c-blue-border,rgba(59,111,232,.2));width:100%">
-          <div><div style="font-size:11px;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em">Vendor</div><div style="font-weight:600;font-size:13px">${po.supplierLabel||po.supplier||'—'}</div></div>
-          <div><div style="font-size:11px;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em">Currency PO</div><div style="font-weight:600;font-size:13px"><span class="badge badge-blue">${po.currency||'—'}</span></div></div>
-          <div><div style="font-size:11px;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em">Total Value PO</div><div style="font-weight:600;font-size:14px;color:var(--c-blue-dark,#1e40af)">${po.currency||''} ${Number(po.poValue||0).toLocaleString()}</div></div>
-          <div><div style="font-size:11px;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em">PO Date</div><div style="font-size:13px">${po.poDate||'—'}</div></div>
-        </div>`;
-    });
-  }
-});
 // ══════════════════════════════════════════════════════════════
 // NIE CENTER — Auto-Matching NIE BPOM untuk SKI
 // ══════════════════════════════════════════════════════════════
@@ -4136,148 +4171,4 @@ async function nieServerSearchAndZip(nies) {
 
   const cnt = zr.headers.get('X-File-Count') || foundSet.size;
   showToast(`✓ ZIP downloaded: ${cnt} file NIE (${zipName})`, 'success');
-}
-// ══════════════════════════════════════════════════════════════
-// DASHBOARD — Header, Alerts, PO Summary
-// ══════════════════════════════════════════════════════════════
-
-function renderDashboardHeader() {
-  const now  = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 11 ? 'Selamat Pagi' : hour < 15 ? 'Selamat Siang' : hour < 18 ? 'Selamat Sore' : 'Selamat Malam';
-  const days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-  const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-  const dateStr = `${days[now.getDay()]}, ${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
-
-  const greetEl = document.getElementById('dash-greeting');
-  const dateEl  = document.getElementById('dash-date');
-  if (greetEl) greetEl.textContent = `${greeting}, Tim Import! 👋`;
-  if (dateEl)  dateEl.textContent  = dateStr;
-
-  // Update ship count badge
-  const countEl = document.getElementById('dash-ship-count');
-  if (countEl) countEl.textContent = `${MOCK_SHIPMENTS.length} shipment`;
-}
-
-function renderDashboardAlerts() {
-  const el = document.getElementById('dash-alerts');
-  if (!el) return;
-
-  const alerts = [];
-  const today = new Date(); today.setHours(0,0,0,0);
-
-  MOCK_SHIPMENTS.forEach(ship => {
-    const dWH   = getDaysUntil(ship.ataWarehouse);
-    const dPort = getDaysUntil(ship.ataPort);
-
-    if (dWH !== null && dWH >= 0 && dWH <= 3) {
-      alerts.push({
-        type:    dWH === 0 ? 'danger' : 'warning',
-        icon:    'ti-building-warehouse',
-        title:   `${ship.brand} — ${ship.shipmentName}`,
-        msg:     dWH === 0 ? 'Jadwal ATA Warehouse HARI INI!' : `ATA Warehouse dalam ${dWH} hari (${fmtDate(ship.ataWarehouse)})`,
-        action:  "switchTab('shipment')",
-      });
-    } else if (dPort !== null && dPort >= 0 && dPort <= 2) {
-      alerts.push({
-        type:  'info',
-        icon:  'ti-anchor',
-        title: `${ship.brand} — ${ship.shipmentName}`,
-        msg:   dPort === 0 ? 'Jadwal ATA Port HARI INI!' : `ATA Port dalam ${dPort} hari (${fmtDate(ship.ataPort)})`,
-        action: "switchTab('shipment')",
-      });
-    }
-  });
-
-  // PO alerts: belum PIB lebih dari 30 hari
-  MOCK_PO_DATA.forEach(po => {
-    if (po.status === 'belum-pib' && po.poDate) {
-      const daysSincePO = Math.floor((today - new Date(po.poDate)) / 86400000);
-      if (daysSincePO > 30) {
-        alerts.push({
-          type:   'warning',
-          icon:   'ti-file-alert',
-          title:  `PO ${po.poNumber} — ${po.supplierLabel||po.supplier}`,
-          msg:    `Belum ada PIB sejak ${daysSincePO} hari lalu (PO Date: ${fmtDate(po.poDate)})`,
-          action: `switchTab('history')`,
-        });
-      }
-    }
-    if (po.status === 'kurang') {
-      alerts.push({
-        type:  'danger',
-        icon:  'ti-trending-down',
-        title: `Shortage — PO ${po.poNumber}`,
-        msg:   `${po.supplierLabel||po.supplier}: qty di warehouse kurang dari PIB`,
-        action: `showDetail('${po.poNumber}')`,
-      });
-    }
-  });
-
-  if (!alerts.length) {
-    el.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(34,197,94,.07);border:0.5px solid rgba(34,197,94,.25);border-radius:10px;font-size:13px;color:#15803d">
-        <i class="ti ti-circle-check" style="font-size:18px"></i>
-        <span>Semua baik — tidak ada alert mendesak hari ini.</span>
-      </div>`;
-    return;
-  }
-
-  const colorMap = {
-    danger:  { bg:'rgba(239,68,68,.08)',  border:'rgba(239,68,68,.25)',  text:'#dc2626', label:'URGENT' },
-    warning: { bg:'rgba(249,115,22,.08)', border:'rgba(249,115,22,.25)', text:'#c2410c', label:'PERHATIAN' },
-    info:    { bg:'rgba(59,130,246,.08)', border:'rgba(59,130,246,.25)', text:'#1d4ed8', label:'INFO' },
-  };
-
-  el.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${alerts.slice(0,5).map(a => {
-        const c = colorMap[a.type] || colorMap.info;
-        return `<div onclick="${a.action}" style="display:flex;align-items:center;gap:12px;padding:11px 16px;background:${c.bg};border:0.5px solid ${c.border};border-left:3px solid ${c.text};border-radius:8px;cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.85'" onmouseleave="this.style.opacity='1'">
-          <i class="ti ${a.icon}" style="font-size:18px;color:${c.text};flex-shrink:0"></i>
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:1px">
-              <span style="font-size:9px;font-weight:800;letter-spacing:.08em;color:${c.text};background:${c.border};padding:1px 6px;border-radius:3px">${c.label}</span>
-              <span style="font-size:13px;font-weight:600;color:var(--c-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${a.title}</span>
-            </div>
-            <div style="font-size:12px;color:var(--c-text-hint)">${a.msg}</div>
-          </div>
-          <i class="ti ti-chevron-right" style="color:var(--c-text-hint);flex-shrink:0;font-size:14px"></i>
-        </div>`;
-      }).join('')}
-      ${alerts.length > 5 ? `<div style="text-align:center;font-size:12px;color:var(--c-text-hint);padding:4px">+${alerts.length-5} alert lainnya</div>` : ''}
-    </div>`;
-}
-
-function renderDashboardPoSummary() {
-  const el = document.getElementById('dash-po-summary');
-  if (!el) return;
-
-  const total   = MOCK_PO_DATA.length;
-  const belum   = MOCK_PO_DATA.filter(p=>p.status==='belum-pib').length;
-  const kurang  = MOCK_PO_DATA.filter(p=>p.status==='kurang').length;
-  const match   = MOCK_PO_DATA.filter(p=>p.status==='match').length;
-  const lebih   = MOCK_PO_DATA.filter(p=>p.status==='lebih').length;
-
-  const cards = [
-    { label:'Total PO',   value:total,  color:'#6366f1', bg:'rgba(99,102,241,.08)',  icon:'ti-files',          action:"switchTab('history')" },
-    { label:'Belum PIB',  value:belum,  color:'#94a3b8', bg:'rgba(148,163,184,.1)',   icon:'ti-clock-pause',    action:"switchTab('history')" },
-    { label:'Match ✓',    value:match,  color:'#22c55e', bg:'rgba(34,197,94,.08)',    icon:'ti-circle-check',   action:"switchTab('history')" },
-    { label:'Shortage',   value:kurang, color:'#ef4444', bg:'rgba(239,68,68,.08)',    icon:'ti-trending-down',  action:"switchTab('history')" },
-    { label:'Excess',     value:lebih,  color:'#f97316', bg:'rgba(249,115,22,.08)',   icon:'ti-trending-up',    action:"switchTab('history')" },
-  ];
-
-  el.innerHTML = `
-    <div style="font-size:13px;font-weight:700;color:var(--c-text-primary);display:flex;align-items:center;gap:8px;margin-bottom:12px">
-      <i class="ti ti-files" style="color:var(--c-blue)"></i> Status Purchase Order
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      ${cards.map(c => `
-        <div onclick="${c.action}" style="flex:1;min-width:100px;padding:14px 16px;background:${c.bg};border:0.5px solid ${c.color}30;border-radius:10px;cursor:pointer;transition:transform .12s,box-shadow .12s;text-align:center"
-          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,.1)'"
-          onmouseleave="this.style.transform='';this.style.boxShadow=''">
-          <div style="font-size:26px;font-weight:800;color:${c.color};line-height:1.1;margin-bottom:4px">${c.value}</div>
-          <div style="font-size:11px;font-weight:600;color:${c.color};text-transform:uppercase;letter-spacing:.05em;opacity:.85">${c.label}</div>
-        </div>`).join('')}
-    </div>`;
 }
