@@ -159,6 +159,12 @@
           <button class="btn-ghost btn-sm" onclick="switchTab('create');clearPibForm();renderItemRows([])">
             <i class="ti ti-file-plus"></i> Buat PO
           </button>
+          <button class="btn-ghost btn-sm" onclick="switchTab('ci')">
+            <i class="ti ti-file-search"></i> Validasi CI
+          </button>
+          <button class="btn-ghost btn-sm" onclick="switchTab('valrecon')">
+            <i class="ti ti-scale"></i> Value Recon
+          </button>
           <button class="btn-ghost btn-sm" onclick="switchTab('shipment')">
             <i class="ti ti-ship"></i> Lihat Shipment
           </button>
@@ -437,7 +443,12 @@
             <div class="field-group">
               <label>Total Qty Warehouse</label>
               <input type="number" id="pib-qty-wh" placeholder="0" min="0" readonly class="input-readonly" />
-              <div class="field-hint">Dihitung otomatis dari item di bawah</div>
+              <div class="field-hint">Dihitung otomatis dari item · diisi oleh <strong>Admin WH</strong> saat barang diterima</div>
+            </div>
+            <div class="field-group">
+              <label>Total Value PO (dari item)</label>
+              <input type="text" id="pib-total-value-po" placeholder="0.00" readonly class="input-readonly" />
+              <div class="field-hint">Qty PO × Harga Satuan, dijumlah semua item</div>
             </div>
           </div>
         </div>
@@ -452,7 +463,7 @@
           </div>
           <div class="hint-box">
             <i class="ti ti-bulb"></i>
-            Isi Qty PIB dan Qty Warehouse per SKU. Kolom <strong>Selisih</strong> dihitung otomatis. Status PO ditentukan dari total keseluruhan.
+            Isi Qty PIB dan Qty Warehouse per SKU. Kolom <strong>Selisih</strong> dan <strong>Value PO</strong> dihitung otomatis (Qty PO × Harga Satuan × (1 − Diskon%)) — otomatis terisi dari PDF PO kalau pakai Auto-Fill.
           </div>
           <div class="table-wrap" style="margin-top:12px">
             <table class="data-table item-input-table">
@@ -464,8 +475,11 @@
                   <th style="width:90px">Type</th>
                   <th class="num" style="width:90px">Qty PO</th>
                   <th class="num" style="width:90px">Qty PIB</th>
-                  <th class="num" style="width:100px">Qty WH</th>
+                  <th class="num" style="width:100px">Qty WH <span style="font-weight:400;font-size:10px;color:var(--c-text-hint)">(Admin WH)</span></th>
                   <th class="num" style="width:80px">Selisih</th>
+                  <th class="num" style="width:110px">Harga Satuan</th>
+                  <th class="num" style="width:80px">Diskon (%)</th>
+                  <th class="num" style="width:120px">Value PO</th>
                   <th style="width:60px"></th>
                 </tr>
               </thead>
@@ -697,7 +711,7 @@
         </div>
         <div class="hint-box hint-box-blue" style="margin-bottom:14px;">
           <i class="ti ti-info-circle"></i>
-          Upload file CI (Excel / CSV / PDF). Sistem akan mencocokkan SKU dari CI dengan data PO yang dipilih.
+          Upload file CI (Excel / CSV / PDF). Sistem akan mencocokkan SKU dari CI dengan data PO yang dipilih. Jika file punya kolom <strong>Amount / Value / Total</strong>, nilainya otomatis terbaca sebagai <strong>Value CI</strong> dan bisa langsung ditarik ke Value Reconciliation setelah verifikasi disimpan.
         </div>
         <div id="ci-drop-zone" class="pdf-drop-zone"
              onclick="document.getElementById('ci-file-input').click()"
@@ -765,6 +779,7 @@
                   <th>Match Via</th>
                   <th class="num">Qty PO</th>
                   <th class="num">Qty CI</th>
+                  <th class="num" title="Value/Amount per item dari kolom Amount di file CI — dipakai otomatis di Value Reconciliation">Value CI</th>
                   <th class="num">Selisih</th>
                   <th>Status</th>
                   <th style="width:38px" title="Override mapping manual"></th>
@@ -867,72 +882,103 @@
 
       <!-- KPI Strip -->
       <div class="kpi-strip" style="margin-bottom:16px">
-        <div class="kpi-card"><div class="kpi-value" id="vr-kpi-total">0</div><div class="kpi-label">Total Bukti Bayar</div></div>
-        <div class="kpi-card" style="border-left:3px solid #22c55e"><div class="kpi-value" id="vr-kpi-match">0</div><div class="kpi-label">Match</div></div>
-        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="vr-kpi-kurang">0</div><div class="kpi-label">Kurang Bayar</div></div>
-        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="vr-kpi-lebih">0</div><div class="kpi-label">Lebih Bayar</div></div>
+        <div class="kpi-card"><div class="kpi-value" id="vr-kpi-total">0</div><div class="kpi-label">PO Direkonsiliasi</div></div>
+        <div class="kpi-card" style="border-left:3px solid #22c55e"><div class="kpi-value" id="vr-kpi-match">0</div><div class="kpi-label">Item Match</div></div>
+        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="vr-kpi-kurang">0</div><div class="kpi-label">Item Kurang (CI &lt; PO)</div></div>
+        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="vr-kpi-lebih">0</div><div class="kpi-label">Item Lebih (CI &gt; PO)</div></div>
       </div>
 
-      <!-- CI Value Master -->
+      <!-- STEP 1: Pilih PO -->
       <div class="form-card" style="margin-bottom:16px">
         <div class="form-card-title">
-          <i class="ti ti-file-invoice"></i>
-          <span>Data Nilai CI (Commercial Invoice)</span>
-          <span class="field-hint" style="margin-left:8px">Nilai CI menjadi acuan pembanding bukti pembayaran</span>
+          <span class="ci-step-badge">1</span>
+          <i class="ti ti-file-search"></i>
+          <span>Pilih PO untuk Value Reconciliation</span>
         </div>
-        <div class="form-grid-3">
-          <div class="field-group">
-            <label>Nomor PO <span class="req">*</span></label>
-            <select id="vr-ci-po-select" class="field-input">
-              <option value="">— Pilih PO —</option>
+        <div class="hint-box hint-box-blue" style="margin-bottom:14px">
+          <i class="ti ti-info-circle"></i>
+          Value PO diambil otomatis dari Qty PO × Harga Satuan yang diisi saat Buat PO. Isi Value CI per item untuk dibandingkan.
+        </div>
+        <div class="form-grid-2" style="gap:16px; align-items:flex-end;">
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-search"></i> Cari No PO / Brand</label>
+            <input type="text" id="vr-po-search" placeholder="Ketik untuk filter PO..." oninput="vrFilterPoList()" autocomplete="off" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-list"></i> Pilih PO</label>
+            <select id="vr-po-select" onchange="vrSelectPo(this.value)">
+              <option value="">— Pilih PO Number —</option>
             </select>
           </div>
-          <div class="field-group">
-            <label>Nomor CI <span class="req">*</span></label>
-            <input type="text" id="vr-ci-number" placeholder="e.g. CI-IZ-25-09" style="font-family:monospace" />
-          </div>
-          <div class="field-group">
-            <label>Tanggal CI</label>
-            <input type="date" id="vr-ci-date" />
-          </div>
-          <div class="field-group">
-            <label>Currency</label>
-            <input type="text" id="vr-ci-currency" placeholder="USD" style="text-transform:uppercase" />
-          </div>
-          <div class="field-group">
-            <label>Value CI <span class="req">*</span></label>
-            <input type="number" id="vr-ci-value" placeholder="10000" step="0.01" />
-          </div>
-          <div class="field-group" style="display:flex;align-items:flex-end">
-            <button class="btn-primary" style="width:100%" onclick="vrSaveCi()"><i class="ti ti-plus"></i> Tambah / Update CI</button>
+        </div>
+        <div id="vr-po-detail" style="display:none; margin-top:16px;">
+          <div class="ci-po-info-bar" id="vr-po-info-bar"></div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Input Value CI per item & bandingkan -->
+      <div class="form-card" id="vr-step2-card" style="display:none; margin-bottom:16px">
+        <div class="form-card-title">
+          <span class="ci-step-badge">2</span>
+          <i class="ti ti-arrows-diff"></i>
+          <span>Value PO vs Value CI per Item</span>
+          <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn-ghost btn-sm" onclick="vrPullFromCi()" title="Ambil Value CI dari hasil Verifikasi CI (kolom Amount/Value pada file CI)">
+              <i class="ti ti-wand"></i> Tarik dari Verifikasi CI
+            </button>
+            <button class="btn-ghost btn-sm" onclick="vrPasteCiValues()">
+              <i class="ti ti-clipboard"></i> Isi Value CI = Value PO (contoh)
+            </button>
+            <button class="btn-primary btn-sm" onclick="vrSaveReconciliation()">
+              <i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi
+            </button>
           </div>
         </div>
-        <div class="table-wrap" style="margin-top:12px">
+
+        <div class="hint-box hint-box-blue" style="margin-bottom:10px">
+          <i class="ti ti-info-circle"></i>
+          Jika PO ini sudah pernah melalui <strong>Verifikasi CI</strong> dan file CI-nya punya kolom Amount/Value, Value CI di bawah akan otomatis terisi (ditandai ikon <i class="ti ti-wand"></i>). Anda tetap bisa mengedit nilainya secara manual kapan saja.
+        </div>
+
+        <!-- Summary strip -->
+        <div class="ci-summary-strip" id="vr-summary-strip"></div>
+
+        <div class="table-wrap" style="margin-top:8px">
           <table class="data-table">
-            <thead><tr><th>Nomor PO</th><th>Nomor CI</th><th>Tgl CI</th><th class="num">Currency</th><th class="num">Value CI</th><th style="width:70px"></th></tr></thead>
-            <tbody id="vr-ci-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada data CI. Tambahkan di atas.</td></tr></tbody>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Nama Produk</th>
+                <th class="num">Qty PO</th>
+                <th class="num">Harga Satuan</th>
+                <th class="num">Value PO</th>
+                <th class="num" style="width:150px">Value CI (input)</th>
+                <th class="num">Selisih</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="vr-recon-tbody"></tbody>
           </table>
         </div>
       </div>
 
-      <!-- Reconciliation Table -->
-      <div class="form-card" style="margin-bottom:16px">
+      <!-- STEP 3: History Rekonsiliasi -->
+      <div class="form-card">
         <div class="form-card-title">
-          <i class="ti ti-scale"></i>
-          <span>Dashboard Value Reconciliation — Payment Proof vs CI</span>
+          <i class="ti ti-history"></i>
+          <span>History Value Reconciliation</span>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" id="vr-search" placeholder="Cari PO / CI…"
+            <input type="text" id="vr-history-search" placeholder="Cari PO / Brand…"
               style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;min-width:180px"
-              oninput="vrFilterTable()" />
-            <select id="vr-status-filter"
+              oninput="vrFilterHistory()" />
+            <select id="vr-history-status-filter"
               style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px"
-              onchange="vrFilterStatus()">
+              onchange="vrFilterHistory()">
               <option value="">Semua Status</option>
               <option value="match">Match</option>
-              <option value="kurang">Kurang Bayar</option>
-              <option value="lebih">Lebih Bayar</option>
-              <option value="currency-mismatch">Currency Mismatch</option>
-              <option value="no-ci">CI Tidak Ditemukan</option>
+              <option value="kurang">Kurang</option>
+              <option value="lebih">Lebih</option>
+              <option value="mixed">Mixed</option>
             </select>
           </div>
         </div>
@@ -941,106 +987,17 @@
             <thead>
               <tr>
                 <th>PO Number</th>
-                <th>Nomor CI</th>
-                <th>Term</th>
-                <th class="num">Value CI</th>
-                <th class="num">Expected</th>
-                <th>Tgl Bayar</th>
-                <th class="num">Value Bayar</th>
+                <th>Brand</th>
+                <th>Direkonsiliasi</th>
+                <th class="num">Total Value PO</th>
+                <th class="num">Total Value CI</th>
                 <th class="num">Selisih</th>
                 <th>Status</th>
                 <th style="width:80px"></th>
               </tr>
             </thead>
-            <tbody id="vr-tbody"></tbody>
+            <tbody id="vr-history-tbody"><tr><td colspan="8" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada rekonsiliasi tersimpan.</td></tr></tbody>
           </table>
-        </div>
-      </div>
-
-      <!-- Input Payment Proof Form -->
-      <div class="form-card">
-        <div class="form-card-title">
-          <i class="ti ti-plus"></i>
-          <span>Input / Upload Bukti Pembayaran (Payment Proof)</span>
-          <span class="badge badge-blue" style="margin-left:8px;font-size:11px">AI-Powered · PDF + Excel (opsional)</span>
-        </div>
-
-        <!-- Upload Zone -->
-        <div class="hint-box hint-box-blue" style="margin-bottom:12px">
-          <i class="ti ti-sparkles"></i>
-          Upload file bukti transfer / payment proof (PDF/Excel) — AI akan mencoba membaca tanggal dan nilai transfer secara otomatis, atau isi manual di bawah.
-        </div>
-        <div id="vr-pay-drop-zone" class="pdf-drop-zone"
-          onclick="document.getElementById('vr-pay-file').click()"
-          ondragover="event.preventDefault();this.classList.add('dragover')"
-          ondragleave="this.classList.remove('dragover')"
-          ondrop="handleVrPayDrop(event)">
-          <input type="file" id="vr-pay-file" accept=".pdf,.xlsx,.xls,.csv" style="display:none"
-            onchange="handleVrPayUpload(this.files[0])" />
-          <div id="vr-pay-drop-content">
-            <i class="ti ti-file-upload" style="font-size:30px;color:var(--c-blue);margin-bottom:8px"></i>
-            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop file bukti pembayaran</div>
-            <div style="font-size:12px;color:var(--c-text-hint)">PDF · Excel (.xlsx) · CSV — atau isi manual di bawah</div>
-          </div>
-          <div id="vr-pay-loading" style="display:none;text-align:center">
-            <div class="pdf-spinner"></div>
-            <div style="font-size:13px;margin-top:10px;color:var(--c-blue)">AI membaca bukti pembayaran…</div>
-          </div>
-        </div>
-
-        <!-- Form Fields -->
-        <div style="margin-top:16px">
-          <div class="form-grid-3">
-            <div class="field-group">
-              <label>Tanggal Payment Proof <span class="req">*</span></label>
-              <input type="date" id="vr-pay-date" />
-            </div>
-            <div class="field-group">
-              <label>Value Payment Proof <span class="req">*</span></label>
-              <input type="number" id="vr-pay-value" placeholder="5000000" step="0.01" />
-            </div>
-            <div class="field-group">
-              <label>Currency</label>
-              <input type="text" id="vr-pay-currency" placeholder="USD" style="text-transform:uppercase" />
-            </div>
-            <div class="field-group">
-              <label>Term Pembayaran <span class="req">*</span></label>
-              <select id="vr-pay-term" onchange="vrTermChanged()">
-                <option value="50">50% (Down Payment)</option>
-                <option value="100">100% (Full Payment)</option>
-                <option value="manual">Isi Manual</option>
-              </select>
-            </div>
-            <div class="field-group" id="vr-pay-term-manual-wrap" style="display:none">
-              <label>Persentase Manual (%)</label>
-              <input type="number" id="vr-pay-term-manual" placeholder="e.g. 30" min="0" max="100" step="0.01" />
-            </div>
-            <div class="field-group">
-              <label>Nomor PO yang Dituju <span class="req">*</span></label>
-              <select id="vr-pay-po-select" class="field-input" onchange="vrPayPoChanged()">
-                <option value="">— Pilih PO —</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label>Nomor CI yang Dituju <span class="req">*</span></label>
-              <select id="vr-pay-ci-select" class="field-input">
-                <option value="">— Pilih PO terlebih dahulu —</option>
-              </select>
-              <div class="field-hint">Hanya menampilkan CI yang terdaftar untuk PO terpilih</div>
-            </div>
-            <div class="field-group">
-              <label>Referensi / Keterangan</label>
-              <input type="text" id="vr-pay-ref" placeholder="No. referensi transfer bank (opsional)" />
-            </div>
-          </div>
-          <div id="vr-pay-preview" style="margin-top:4px"></div>
-        </div>
-
-        <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn-ghost" onclick="vrResetForm()"><i class="ti ti-rotate"></i> Reset</button>
-          <button class="btn-primary" id="vr-save-btn" type="button" onclick="vrSave()">
-            <i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi
-          </button>
         </div>
       </div>
     </section>
@@ -1050,7 +1007,7 @@
       <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:900px;padding:24px;position:relative">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
           <i class="ti ti-scale" style="font-size:20px;color:var(--c-blue)"></i>
-          <h2 style="font-size:16px;font-weight:600;margin:0">Detail Value Reconciliation — Payment Proof vs CI</h2>
+          <h2 style="font-size:16px;font-weight:600;margin:0">Detail Value Reconciliation — PO vs CI</h2>
           <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="vrCloseDetail()"><i class="ti ti-x"></i></button>
         </div>
         <div id="vr-detail-content"></div>
@@ -1261,30 +1218,41 @@
           <button class="btn-ghost btn-sm" onclick="this.closest('#gdrive-config-notice').style.display='none'"><i class="ti ti-x"></i> Tutup panduan ini</button>
         </div>
 
-        <!-- Manual search (tersedia setelah login) -->
+        <!-- Manual search (tersedia setelah login) — sama alurnya kayak box NIE di atas,
+             bedanya box ini bebas cari file APA SAJA (bukan cuma nomor NIE) -->
         <div id="gdrive-search-card" style="display:none">
-          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Cari Manual</div>
+          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Cari Manual (File Selain NIE)</div>
+          <div class="hint-box hint-box-blue" style="margin-bottom:10px">
+            <i class="ti ti-info-circle"></i>
+            Untuk cari file <strong>selain NIE</strong> — nama produk, nomor invoice, nama dokumen, dll. Paste banyak kata kunci sekaligus, <strong>satu per baris</strong>. Box NIE di atas khusus untuk nomor NIE saja.
+          </div>
+          <textarea id="gdrive-manual-input" rows="4" placeholder="Contoh (satu per baris):&#10;Invoice IZ-SO-25-001&#10;KEANA Rice Pack&#10;SKI BPOM Januari"
+            style="width:100%;padding:10px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;font-family:inherit;resize:vertical"
+            oninput="gdriveManualCount()"></textarea>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px">
+            <span id="gdrive-manual-count" style="font-size:12px;color:var(--c-text-hint)"></span>
+          </div>
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-            <input type="text" id="gdrive-search-input" placeholder="Ketik nomor NIE, nama brand, atau nama file…"
-              style="flex:1;min-width:200px;padding:8px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px"
-              onkeydown="if(event.key==='Enter')gdriveSearch()" />
+            <input type="text" id="gdrive-folder-input" placeholder="Filter folder (opsional)"
+              style="flex:1;min-width:160px;padding:8px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px" />
             <select id="gdrive-filetype" style="padding:8px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px">
               <option value="pdf">PDF</option>
               <option value="xlsx">Excel</option>
-              <option value="all">Semua</option>
+              <option value="all">Semua Tipe</option>
             </select>
-            <button class="btn-primary btn-sm" onclick="gdriveSearch()">
-              <i class="ti ti-search"></i> Cari di Drive
+            <button class="btn-primary btn-sm" onclick="gdriveManualSearchAndZip()">
+              <i class="ti ti-search"></i> Cari Semua
             </button>
           </div>
           <div id="gdrive-search-loading" style="display:none;padding:12px;text-align:center;color:var(--c-text-hint);font-size:13px">
             <i class="ti ti-loader" style="animation:spin 1s linear infinite;margin-right:6px"></i>Mencari di Google Drive…
           </div>
+          <div id="gdrive-manual-chip-area" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 10px"></div>
           <div id="gdrive-result-count" style="font-size:12px;color:var(--c-text-hint);margin-bottom:6px"></div>
           <div id="gdrive-results">
             <div style="text-align:center;padding:24px;color:var(--c-text-hint);font-size:13px;border:1.5px dashed var(--c-border);border-radius:8px">
               <i class="ti ti-brand-google-drive" style="font-size:28px;display:block;margin-bottom:8px;color:#4285F4"></i>
-              Upload Surat Pengantar di atas untuk pencarian otomatis, atau ketik kata kunci untuk cari manual.
+              Upload Surat Pengantar di atas untuk pencarian NIE otomatis, atau paste kata kunci di atas untuk cari file lain.
             </div>
           </div>
         </div>

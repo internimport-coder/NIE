@@ -434,6 +434,26 @@ body {
 }
 .item-input-table td input[type="number"] { text-align: right; }
 
+/* Value CI input (Value Reconciliation table) — plain text box, styled to match other inputs */
+.vr-ci-input {
+  height: 34px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--c-border-md);
+  border-radius: var(--radius-sm);
+  padding: 0 10px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--c-text);
+  background: var(--c-surface);
+  outline: none;
+  transition: border-color var(--trans), box-shadow var(--trans);
+}
+.vr-ci-input:focus {
+  border-color: var(--c-blue);
+  box-shadow: 0 0 0 3px rgba(59,111,232,.12);
+}
+.vr-ci-input::placeholder { color: var(--c-text-hint); }
+
 /* ═══════════════════════════════════════════════
    BADGES / STATUS
 ═══════════════════════════════════════════════ */

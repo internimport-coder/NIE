@@ -435,6 +435,18 @@ function parsePdfHeuristic(pdfText) {
     const qtyMatches = [...text.matchAll(/\b([0-9]{1,3}(?:,[0-9]{3})*)\s*Units?\b/gi)];
     if (!qtyMatches.length) return;
     const qty = parseInt(qtyMatches[0][1].replace(/,/g, ''), 10) || 0;
+
+    // ── Unit Price / Disc% / Net Price — biasanya muncul tepat setelah "N Units" ──
+    // Pola: <unit_price> <disc%> [¥/$] <net_price>   e.g. "625.00 0.00 ¥ 3,600,000"
+    let unit_price = null, discount_pct = null, net_price = null;
+    const afterQty = text.slice(qtyMatches[0].index + qtyMatches[0][0].length);
+    const priceMatch = afterQty.match(/([\d,]+(?:\.\d+)?)\s+([\d.]+)\s*[¥$]?\s*([\d,]+(?:\.\d+)?)/);
+    if (priceMatch) {
+      unit_price   = parseFloat(priceMatch[1].replace(/,/g, '')) || 0;
+      discount_pct = parseFloat(priceMatch[2]) || 0;
+      net_price    = parseFloat(priceMatch[3].replace(/,/g, '')) || 0;
+    }
+
     const sizeMatch = text.match(/\(([^)]+)\)/);
     let size = sizeMatch ? sizeMatch[1].trim() : null;
     if (size) size = size.replace(/^(Size|Variant|Non Specify)\s*:\s*/i, '').trim();
@@ -443,7 +455,7 @@ function parsePdfHeuristic(pdfText) {
     const qtyIndex = name.search(/\b[0-9]{1,3}(?:,[0-9]{3})*\s*Units?\b/gi);
     if (qtyIndex !== -1) name = name.slice(0, qtyIndex);
     name = name.replace(/[¥$]\s*[0-9,\.]+/g, '').replace(/\s+/g, ' ').trim();
-    out.items.push({ sku, name, size, qty, unit_price: null, discount_pct: null, net_price: null });
+    out.items.push({ sku, name, size, qty, unit_price, discount_pct, net_price });
   });
 
   return out;
@@ -799,6 +811,7 @@ function buildCiAgg(ciItems) {
     const sku  = String(row.sku  || row.reference || row.product_code || row.item_code || '').trim();
     const name = String(row.name || row.product_name || row.description || row.nama_bpom || '').trim();
     const qty  = Number(row.qty  || row.quantity || 0);
+    const amount = Number(row.total || row.amount || row.value || row.net_price || 0);
     if (!name && !sku) return; // skip blank rows
     // Only deduplicate truly identical entries (same sku+name+qty)
     const dupe = ciAgg.find(b =>
@@ -809,7 +822,7 @@ function buildCiAgg(ciItems) {
     if (dupe) {
       // genuine duplicate row — skip (don't double-count)
     } else {
-      ciAgg.push({ sku, name, qty, rawRow: row });
+      ciAgg.push({ sku, name, qty, amount, rawRow: row });
     }
   });
   return ciAgg;
@@ -889,7 +902,7 @@ function buildFuzzyMatches(poItems, ciItems) {
     if (ciIdx === null || ciIdx === undefined || ciIdx < 0) {
       return {
         sku: po.poSku, name: po.poName, size: po.size, type: po.type, qPO: po.qPO,
-        ciQty: 0, matchedName: '', matchedSku: '', score: 0, via: '', matched: false,
+        ciQty: 0, ciAmount: 0, matchedName: '', matchedSku: '', score: 0, via: '', matched: false,
         diff: -po.qPO, ciAgg, bestCiIdx: -1,
       };
     }
@@ -907,7 +920,7 @@ function buildFuzzyMatches(poItems, ciItems) {
     const nameSim = Math.round(tokenSim(po.poName, ci.name) * 100);
     return {
       sku: po.poSku, name: po.poName, size: po.size, type: po.type, qPO: po.qPO,
-      ciQty: ci.qty, matchedName: ci.name || ci.sku || '—', matchedSku: ci.sku || '',
+      ciQty: ci.qty, ciAmount: ci.amount || 0, matchedName: ci.name || ci.sku || '—', matchedSku: ci.sku || '',
       score: Math.min(100, nameSim), via, matched: true,
       diff: ci.qty - po.qPO,
       ciAgg, bestCiIdx: ciIdx,
@@ -919,7 +932,7 @@ function buildFuzzyMatches(poItems, ciItems) {
     if (!usedCiIdx.has(idx)) {
       rows.push({
         sku: '', name: '—', size: '', type: '', qPO: 0,
-        ciQty: ci.qty, matchedName: ci.name || ci.sku || '?', matchedSku: ci.sku || '',
+        ciQty: ci.qty, ciAmount: ci.amount || 0, matchedName: ci.name || ci.sku || '?', matchedSku: ci.sku || '',
         score: 0, via: '', matched: false, diff: ci.qty,
         extraFromCi: true, ciAgg, bestCiIdx: idx,
       });
@@ -960,6 +973,8 @@ function _renderCompareRows(rows, po, ciAgg) {
   const lebihCount  = rows.filter(r => !r.extraFromCi && r.matched && r.diff > 0).length;
   const missCount   = rows.filter(r => !r.extraFromCi && !r.matched).length;
   const lowConfCount= rows.filter(r => !r.extraFromCi && r.matched && r.via === 'Nama Fuzzy' && r.score < 60).length;
+  const totalValueCI = rows.filter(r => !r.extraFromCi).reduce((s, r) => s + (r.ciAmount || 0), 0);
+  const hasValueCi   = totalValueCI > 0;
 
   const strip = document.getElementById('ci-summary-strip');
   if (strip) {
@@ -976,6 +991,7 @@ function _renderCompareRows(rows, po, ciAgg) {
       <div class="ci-sum-box ci-sum-lebih"><div class="ci-sum-val" style="color:var(--c-orange)">${lebihCount}</div><div class="ci-sum-label">Lebih</div></div>
       ${missCount ? `<div class="ci-sum-box" style="border-color:var(--c-gray)"><div class="ci-sum-val" style="color:var(--c-gray)">${missCount}</div><div class="ci-sum-label">Tdk Ada di CI</div></div>` : ''}
       ${lowConfCount ? `<div class="ci-sum-box" style="border-color:var(--c-orange-border);background:var(--c-orange-bg)"><div class="ci-sum-val" style="color:var(--c-orange)">${lowConfCount}</div><div class="ci-sum-label">Conf. Rendah ⚠</div></div>` : ''}
+      ${hasValueCi ? `<div class="ci-sum-box" style="border-color:var(--c-blue-border);background:var(--c-blue-bg)"><div class="ci-sum-val" style="color:var(--c-blue-dark)">${totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="ci-sum-label">Total Value CI (file)</div></div>` : ''}
     `;
   }
 
@@ -1046,6 +1062,7 @@ function _renderCompareRows(rows, po, ciAgg) {
       <td>${viaHtml}</td>
       <td class="num"><strong>${r.qPO.toLocaleString()}</strong></td>
       <td class="num">${r.matched ? r.ciQty.toLocaleString() : '<span style="color:var(--c-text-hint)">—</span>'}</td>
+      <td class="num">${r.ciAmount ? r.ciAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>'}</td>
       <td class="num"><span class="${diffCls}">${r.matched || r.extraFromCi ? diffSign : '—'}</span></td>
       <td>${statusHtml}</td>
       <td>${overrideHtml}</td>
@@ -1073,7 +1090,7 @@ function openCiOverride(rowIdx) {
   const overrideTr = document.createElement('tr');
   overrideTr.className = 'ci-override-panel';
   overrideTr.innerHTML = `
-    <td colspan="10" style="padding:10px 16px; background:var(--c-blue-bg); border-top:2px solid var(--c-blue);">
+    <td colspan="11" style="padding:10px 16px; background:var(--c-blue-bg); border-top:2px solid var(--c-blue);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span style="font-size:13px;font-weight:600;color:var(--c-blue-dark);">
           <i class="ti ti-wand"></i> Override mapping untuk: <strong>${r.name}</strong>
@@ -1104,6 +1121,7 @@ function applyCiOverride(rowIdx) {
   if (ciIdx >= 0 && ciAgg[ciIdx]) {
     const ci = ciAgg[ciIdx];
     r.ciQty       = ci.qty;
+    r.ciAmount    = ci.amount || 0;
     r.matchedName = ci.name || ci.sku || '—';
     r.matchedSku  = ci.sku || '';
     r.score       = Math.round(tokenSim(r.name, ci.name || ci.sku || '') * 100);
@@ -1111,7 +1129,7 @@ function applyCiOverride(rowIdx) {
     r.matched     = true;
     r.bestCiIdx   = ciIdx;
   } else {
-    r.ciQty = 0; r.matchedName = ''; r.matchedSku = '';
+    r.ciQty = 0; r.ciAmount = 0; r.matchedName = ''; r.matchedSku = '';
     r.score = 0; r.via = ''; r.matched = false; r.bestCiIdx = -1;
   }
   r.diff = r.ciQty - r.qPO;
@@ -1168,9 +1186,11 @@ function saveCiVerification() {
   saveCiHistoryAll(history);
   showToast('✓ Verifikasi CI berhasil disimpan!', 'success');
 
-  // Offer to view history
+  // Offer to continue to Value Reconciliation for the same PO
   setTimeout(() => {
-    if (confirm('Verifikasi disimpan. Lihat History Verifikasi CI?')) switchTab('ci-history');
+    if (confirm('Verifikasi qty disimpan. Lanjut ke Value Reconciliation (Value PO vs Value CI) untuk PO ini?')) {
+      goToValueRecon(currentCiPoNumber);
+    }
   }, 400);
 }
 
@@ -1469,6 +1489,8 @@ function fillFormFromParsed(data, fileName) {
       qtyPO:        Number(it.qty) || 0,
       qtyPIB:       0,
       qtyWarehouse: 0,
+      unitPrice:    Number(it.unit_price) || 0,
+      discountPct:  Number(it.discount_pct) || 0,
     }));
     renderItemRows(mappedItems);
     renderPdfPreviewTable(data.items);
@@ -1547,6 +1569,7 @@ function renderPdfPreviewTable(items) {
           <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Nama Produk</th>
           <th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Size</th>
           <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Qty PO</th>
+          <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Unit Price</th>
           <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Disc%</th>
           <th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--c-border);font-weight:500;color:var(--c-text-hint);">Net Price</th>
         </tr>
@@ -1558,6 +1581,7 @@ function renderPdfPreviewTable(items) {
             <td style="padding:6px 10px;">${it.name||'—'}</td>
             <td style="padding:6px 10px;color:var(--c-text-hint)">${it.size||'—'}</td>
             <td style="padding:6px 10px;text-align:right;font-weight:500">${Number(it.qty||0).toLocaleString()}</td>
+            <td style="padding:6px 10px;text-align:right">${it.unit_price!=null ? Number(it.unit_price).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
             <td style="padding:6px 10px;text-align:right;color:${it.discount_pct===100?'var(--c-orange)':'var(--c-text-hint)'}">${it.discount_pct||0}%</td>
             <td style="padding:6px 10px;text-align:right">${it.net_price ? Number(it.net_price).toLocaleString() : '0'}</td>
           </tr>`).join('')}
@@ -1746,14 +1770,34 @@ function renderPibHistory(filter = '') {
       <td>${badge(po.status)}</td>
       <td class="num">${(po.qtyPIB||0).toLocaleString()}</td>
       <td class="num">${(po.qtyWarehouse||0).toLocaleString()}</td>
-      <td>
+      <td style="white-space:nowrap">
         <button class="btn-detail" onclick="showAddPoForm('${po.poNumber}')">
           <i class="ti ti-pencil"></i> Edit
+        </button>
+        <button class="btn-detail" style="margin-left:4px" onclick="goToCiValidation('${po.poNumber}')" title="Validasi qty PO vs CI">
+          <i class="ti ti-file-search"></i> Validasi CI
+        </button>
+        <button class="btn-detail" style="margin-left:4px" onclick="goToValueRecon('${po.poNumber}')" title="Rekonsiliasi value PO vs CI">
+          <i class="ti ti-scale"></i> Value Recon
         </button>
       </td>
     `;
     tbody.appendChild(tr);
   });
+}
+
+// ── Cross-module navigation: History → CI Verification / Value Recon ──
+function goToCiValidation(poNumber) {
+  switchTab('ci');
+  populateCiPoSelect();
+  const select = document.getElementById('ci-po-select');
+  if (select) { select.value = poNumber; selectCiPo(poNumber); }
+}
+
+function goToValueRecon(poNumber) {
+  switchTab('valrecon');
+  const select = document.getElementById('vr-po-select');
+  if (select) { select.value = poNumber; vrSelectPo(poNumber); }
 }
 
 function filterHistory() {
@@ -1858,6 +1902,9 @@ function addItemRow(item = {}) {
   const diffCls = diff>0 ? 'sel-pos' : diff<0 ? 'sel-neg' : 'sel-zero';
   const diffTxt = diff===0 ? '0' : diff>0 ? `+${diff}` : `${diff}`;
   const type = item.type || detectItemType(sku, item.name || '');
+  const unitPrice = item.unitPrice != null ? item.unitPrice : '';
+  const discountPct = item.discountPct != null ? item.discountPct : 0;
+  const valuePO = (Number(qPO)||0) * (Number(unitPrice)||0) * (1 - (Number(discountPct)||0)/100);
 
   row.innerHTML = `
     <td><input type="text" class="item-sku" value="${sku}" placeholder="SKU001"
@@ -1869,6 +1916,10 @@ function addItemRow(item = {}) {
     <td class="num"><input type="number" class="item-qty-pib" value="${qPIB}" min="0" step="1" /></td>
     <td class="num"><input type="number" class="item-qty-wh"  value="${qWH}"  min="0" step="1" /></td>
     <td class="num"><span class="item-selisih ${diffCls}">${diffTxt}</span></td>
+    <td class="num"><input type="number" class="item-unit-price" value="${unitPrice}" min="0" step="0.01" placeholder="0.00" /></td>
+    <td class="num"><input type="number" class="item-discount" value="${discountPct}" min="0" max="100" step="0.01" placeholder="0"
+          title="Diskon 100% = item ini Net Price-nya 0 (biasanya GWP/FOC)" /></td>
+    <td class="num"><span class="item-value-po">${valuePO ? valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '0.00'}</span></td>
     <td><button class="btn-sm" type="button" onclick="removeItemRow(this)"><i class="ti ti-x"></i></button></td>
   `;
   tbody.appendChild(row);
@@ -1876,6 +1927,8 @@ function addItemRow(item = {}) {
   const qPibInput = row.querySelector('.item-qty-pib');
   const qWhInput  = row.querySelector('.item-qty-wh');
   const qPoInput  = row.querySelector('.item-qty-po');
+  const priceInput = row.querySelector('.item-unit-price');
+  const discInput  = row.querySelector('.item-discount');
 
   const updateRow = () => {
     const p  = Number(qPibInput.value || 0);
@@ -1885,9 +1938,16 @@ function addItemRow(item = {}) {
     const span = row.querySelector('.item-selisih');
     span.textContent = d===0 ? '0' : d>0 ? `+${d}` : `${d}`;
     span.className = `item-selisih ${d>0?'sel-pos':d<0?'sel-neg':'sel-zero'}`;
+
+    const price = Number(priceInput.value || 0);
+    const disc  = Math.min(100, Math.max(0, Number(discInput.value || 0)));
+    const val = po * price * (1 - disc/100);
+    const valSpan = row.querySelector('.item-value-po');
+    if (valSpan) valSpan.textContent = val.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
     updateItemTotals();
   };
-  [qPibInput, qWhInput, qPoInput].forEach(el => el.addEventListener('input', updateRow));
+  [qPibInput, qWhInput, qPoInput, priceInput, discInput].forEach(el => el.addEventListener('input', updateRow));
   updateItemTotals();
 }
 
@@ -1913,11 +1973,17 @@ function getItemRowsData() {
     // Read type from badge text, or re-detect from SKU
     const typeCell = row.querySelector('.item-type-cell');
     const type = typeCell?.querySelector('.badge')?.textContent.trim() || detectItemType(sku, name);
+    const qtyPO = parseInt(row.querySelector('.item-qty-po')?.value || 0, 10);
+    const unitPrice = parseFloat(row.querySelector('.item-unit-price')?.value || 0);
+    const discountPct = Math.min(100, Math.max(0, parseFloat(row.querySelector('.item-discount')?.value || 0)));
     return {
       sku, name, size, type,
-      qtyPO:        parseInt(row.querySelector('.item-qty-po')?.value  || 0, 10),
+      qtyPO,
       qtyPIB:       parseInt(row.querySelector('.item-qty-pib')?.value || 0, 10),
       qtyWarehouse: parseInt(row.querySelector('.item-qty-wh')?.value  || 0, 10),
+      unitPrice,
+      discountPct,
+      valuePO: qtyPO * unitPrice * (1 - discountPct/100),
     };
   }).filter(it => it.sku || it.name || it.qtyPIB || it.qtyWarehouse);
 }
@@ -1926,10 +1992,13 @@ function updateItemTotals() {
   const items = getItemRowsData();
   const tPIB = items.reduce((s, i) => s + i.qtyPIB, 0);
   const tWH  = items.reduce((s, i) => s + i.qtyWarehouse, 0);
+  const tValuePO = items.reduce((s, i) => s + (i.valuePO || 0), 0);
   const pibEl = document.getElementById('pib-qty-pib');
   const whEl  = document.getElementById('pib-qty-wh');
+  const valEl = document.getElementById('pib-total-value-po');
   if (pibEl) pibEl.value = tPIB;
   if (whEl)  whEl.value  = tWH;
+  if (valEl) valEl.value = tValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 
 function submitPibForm() {
@@ -2362,611 +2431,452 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 // ══════════════════════════════════════════════════════════════
-// VALUE RECONCILIATION — Payment Proof vs CI (Commercial Invoice)
+// VALUE RECONCILIATION — Purchase Order (Value PO) vs CI (Value CI)
 // ══════════════════════════════════════════════════════════════
 //
 // Konsep:
-//  1. User mendata Nilai CI (Commercial Invoice) per PO — ini menjadi acuan.
-//  2. User input / upload Bukti Pembayaran (Payment Proof): tanggal, value,
-//     term pembayaran (50% / 100% / manual), nomor PO tujuan, nomor CI tujuan.
-//  3. Sistem menghitung Expected Value = Value CI × Term%, lalu membandingkan
-//     dengan Value Payment Proof aktual → menghasilkan status Match / Kurang
-//     Bayar / Lebih Bayar (atau Currency Mismatch / CI Tidak Ditemukan).
+//  1. User pilih PO yang sudah tersimpan (Value PO per item = Qty PO × Harga Satuan,
+//     sudah dihitung otomatis saat "Buat PO").
+//  2. User input Value CI per item (dari Commercial Invoice / dokumen supplier).
+//  3. Sistem membandingkan Value PO vs Value CI per item (dan totalnya) →
+//     menghasilkan status Match / Kurang / Lebih per SKU dan overall per PO.
+//  4. Hasil rekonsiliasi bisa disimpan sebagai history.
 
 // ── Data stores (in-memory) ──────────────────────────────────
-let CI_VALUES = [];      // [{poNumber, ciNumber, ciDate, currency, value}]
-let PAYMENT_PROOFS = []; // [{poNumber, ciNumber, tanggal, value, currency, term, termPercent, expectedValue, diff, reference, comment, auditTrail, _savedAt}]
-let VR_AUDIT = [];        // global audit trail
-let vrCurrentPay = null;  // parsed payment-proof data pending review
-
-function vrLog(action, detail) {
-  const entry = { ts: new Date().toISOString(), user: 'Admin', action, detail };
-  VR_AUDIT.unshift(entry);
-  return entry;
-}
+let VR_RECORDS   = []; // [{id, poNumber, brand, currency, reconciledAt, rows:[{sku,name,qtyPO,unitPrice,valuePO,valueCI,diff,status}], totalValuePO, totalValueCI, totalDiff, status}]
+let vrCurrentPoNumber = null;
+let vrWorkingRows     = null; // rows currently being edited for the selected PO, before saving
 
 function parseMoneyNum(v) {
   if (!v && v !== 0) return 0;
   const s = String(v).replace(/\s/g, '').replace(/[A-Za-z]/g, '');
-  // Indonesian/European dot-thousands: 8.566.600,00 → 8566600
   if (/^\d{1,3}(\.\d{3})+(?:,\d+)?$/.test(s)) {
     return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
   }
   return parseFloat(s.replace(/,/g, '')) || 0;
 }
 
+// ── Bridge: pull Value CI (amount) from latest saved CI verification ──
+// CI Verification reads Amount/Value/Total column from the uploaded CI file
+// (see buildCiAgg) and stores it per row as `ciAmount`. This looks up the most
+// recent saved CI verification for a PO and returns a sku/name -> amount map
+// so Value Reconciliation can auto-fill "Value CI (input)" instead of the
+// user re-typing everything by hand.
+function getCiAmountMapForPo(poNumber) {
+  const history = loadCiHistory()
+    .filter(r => r.poNumber === poNumber)
+    .sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt));
+  if (!history.length) return { map: {}, verifiedAt: null, fileName: null };
+
+  const rec = history[0];
+  const map = {};
+  (rec.rows || []).forEach(r => {
+    if (r.extraFromCi || !r.ciAmount) return;
+    if (r.sku) map['sku:' + r.sku.toUpperCase()] = r.ciAmount;
+    if (r.name) map['name:' + normStr(r.name)] = r.ciAmount;
+  });
+  return { map, verifiedAt: rec.verifiedAt, fileName: rec.fileName };
+}
+
+function lookupCiAmount(map, sku, name) {
+  if (sku && map['sku:' + String(sku).toUpperCase()] != null) return map['sku:' + String(sku).toUpperCase()];
+  if (name && map['name:' + normStr(name)] != null) return map['name:' + normStr(name)];
+  return null;
+}
+
 // ── Init ──────────────────────────────────────────────────────
 function initValRecon() {
-  populateVrPoSelects();
-  vrRenderCiTable();
-  renderVrTable();
+  populateVrPoSelect();
+  renderVrHistory();
   updateVrKpis();
 }
 
-function populateVrPoSelects() {
-  ['vr-ci-po-select', 'vr-pay-po-select'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">— Pilih PO —</option>';
-    (MOCK_PO_DATA || []).forEach(po => {
-      const opt = document.createElement('option');
-      opt.value = po.poNumber;
-      opt.textContent = `${po.poNumber} · ${po.supplierLabel || po.supplier || '—'} · ${po.currency || '—'}`;
-      sel.appendChild(opt);
-    });
-    if (cur) sel.value = cur;
-  });
-}
-
-// ── CI Value Master ───────────────────────────────────────────
-function vrSaveCi() {
-  const poNumber = document.getElementById('vr-ci-po-select')?.value || '';
-  const ciNumber = (document.getElementById('vr-ci-number')?.value || '').trim();
-  const ciDate   = document.getElementById('vr-ci-date')?.value || '';
-  const currency = (document.getElementById('vr-ci-currency')?.value || '').trim().toUpperCase();
-  const valueRaw = document.getElementById('vr-ci-value')?.value || '';
-  const value    = parseMoneyNum(valueRaw);
-
-  if (!poNumber) { showToast('Pilih Nomor PO terlebih dahulu.', 'error'); return; }
-  if (!ciNumber) { showToast('Nomor CI wajib diisi.', 'error'); const el = document.getElementById('vr-ci-number'); if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); } return; }
-  if (!value)    { showToast('Value CI wajib diisi.', 'error'); return; }
-
-  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === poNumber);
-  const existing = CI_VALUES.findIndex(c => c.ciNumber === ciNumber);
-  const record = { poNumber, ciNumber, ciDate, currency: currency || (po?.currency || ''), value, supplier: po?.supplierLabel || po?.supplier || '—' };
-
-  if (existing >= 0) CI_VALUES[existing] = record;
-  else CI_VALUES.push(record);
-
-  vrLog('Simpan CI', `CI ${ciNumber} untuk PO ${poNumber} · Value ${value}`);
-  vrRenderCiTable();
-  populateVrCiSelectForPo(document.getElementById('vr-pay-po-select')?.value || '');
-  renderVrTable(); // refresh in case this CI is already referenced by a payment proof
-  updateVrKpis();
-
-  ['vr-ci-number', 'vr-ci-date', 'vr-ci-currency', 'vr-ci-value'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
-  showToast(`✓ Data CI ${ciNumber} disimpan.`, 'success');
-}
-
-function vrRenderCiTable() {
-  const tbody = document.getElementById('vr-ci-tbody');
-  if (!tbody) return;
-  if (!CI_VALUES.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada data CI. Tambahkan di atas.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = CI_VALUES.map((c, idx) => `
-    <tr>
-      <td style="font-family:monospace;font-size:12px">${c.poNumber}</td>
-      <td style="font-family:monospace;font-size:12px">${c.ciNumber}</td>
-      <td style="font-size:12px">${c.ciDate || '—'}</td>
-      <td class="num"><span class="badge" style="font-size:11px;background:var(--c-blue-bg);color:var(--c-blue-dark)">${c.currency || '—'}</span></td>
-      <td class="num">${(c.value || 0).toLocaleString()}</td>
-      <td><button class="btn-ghost btn-sm" onclick="vrDeleteCi(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
-    </tr>`).join('');
-}
-
-function vrDeleteCi(idx) {
-  const c = CI_VALUES[idx];
-  if (!c) return;
-  if (!confirm(`Hapus data CI ${c.ciNumber}?`)) return;
-  CI_VALUES.splice(idx, 1);
-  vrRenderCiTable();
-  populateVrCiSelectForPo(document.getElementById('vr-pay-po-select')?.value || '');
-  renderVrTable();
-  updateVrKpis();
-  showToast('Data CI dihapus.', 'success');
-}
-
-// ── Payment Proof: PO → CI cascading select ───────────────────
-function vrPayPoChanged() {
-  const poNumber = document.getElementById('vr-pay-po-select')?.value || '';
-  populateVrCiSelectForPo(poNumber);
-}
-
-function populateVrCiSelectForPo(poNumber) {
-  const sel = document.getElementById('vr-pay-ci-select');
+function populateVrPoSelect() {
+  const sel = document.getElementById('vr-po-select');
   if (!sel) return;
   const cur = sel.value;
-  if (!poNumber) {
-    sel.innerHTML = '<option value="">— Pilih PO terlebih dahulu —</option>';
+  sel.innerHTML = '<option value="">— Pilih PO Number —</option>';
+  getAllPoData().forEach(po => {
+    const opt = document.createElement('option');
+    opt.value = po.poNumber;
+    opt.textContent = `${po.poNumber} — ${po.supplierLabel || po.supplier || '—'}`;
+    sel.appendChild(opt);
+  });
+  if (cur) sel.value = cur;
+}
+
+function vrFilterPoList() {
+  const query = document.getElementById('vr-po-search')?.value.trim().toLowerCase() || '';
+  const select = document.getElementById('vr-po-select');
+  if (!select) return;
+  select.innerHTML = '<option value="">— Pilih PO Number —</option>';
+  getAllPoData().filter(po => {
+    const target = `${po.poNumber} ${po.supplierLabel || po.supplier}`.toLowerCase();
+    return !query || target.includes(query);
+  }).forEach(po => {
+    const option = document.createElement('option');
+    option.value = po.poNumber;
+    option.textContent = `${po.poNumber} — ${po.supplierLabel || po.supplier}`;
+    select.appendChild(option);
+  });
+  if (vrCurrentPoNumber) select.value = vrCurrentPoNumber;
+}
+
+// ── Step 1: select PO ───────────────────────────────────────────
+function vrSelectPo(poNumber) {
+  vrCurrentPoNumber = poNumber || null;
+  const detail = document.getElementById('vr-po-detail');
+  const step2  = document.getElementById('vr-step2-card');
+
+  if (!vrCurrentPoNumber) {
+    if (detail) detail.style.display = 'none';
+    if (step2)  step2.style.display  = 'none';
     return;
   }
-  const options = CI_VALUES.filter(c => c.poNumber === poNumber);
-  if (!options.length) {
-    sel.innerHTML = '<option value="">— Belum ada CI untuk PO ini —</option>';
+
+  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === vrCurrentPoNumber);
+  if (!po) { if (detail) detail.style.display = 'none'; if (step2) step2.style.display = 'none'; return; }
+
+  if (detail) {
+    detail.style.display = 'block';
+    const bar = document.getElementById('vr-po-info-bar');
+    if (bar) {
+      const totalValuePO = (po.items || []).reduce((s, i) => s + (Number(i.valuePO) || (Number(i.qtyPO)||0)*(Number(i.unitPrice)||0)), 0);
+      bar.innerHTML = `
+        <div class="ci-po-info-item"><span class="ci-po-info-label">PO Number</span><span class="ci-po-info-val" style="color:var(--c-blue-dark);font-weight:700">${po.poNumber}</span></div>
+        <div class="ci-po-info-item"><span class="ci-po-info-label">Brand</span><span class="ci-po-info-val">${po.supplierLabel || po.supplier || '—'}</span></div>
+        <div class="ci-po-info-item"><span class="ci-po-info-label">Currency</span><span class="ci-po-info-val">${po.currency || 'USD'}</span></div>
+        <div class="ci-po-info-item"><span class="ci-po-info-label">Total Item</span><span class="ci-po-info-val">${(po.items || []).length} SKU</span></div>
+        <div class="ci-po-info-item"><span class="ci-po-info-label">Total Value PO</span><span class="ci-po-info-val">${po.currency || ''} ${totalValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+      `;
+    }
+  }
+
+  // build working rows from PO items — try to reuse a previous reconciliation's Value CI input if it exists,
+  // otherwise auto-fill from the Amount/Value column already read during CI Verification.
+  const prevRecord  = VR_RECORDS.filter(r => r.poNumber === vrCurrentPoNumber).sort((a,b)=> new Date(b.reconciledAt)-new Date(a.reconciledAt))[0];
+  const ciAmountInfo = getCiAmountMapForPo(vrCurrentPoNumber);
+  let autoFilledCount = 0;
+
+  vrWorkingRows = (po.items || []).map(it => {
+    const qtyPO = Number(it.qtyPO || 0);
+    const unitPrice = Number(it.unitPrice || 0);
+    const valuePO = it.valuePO != null ? Number(it.valuePO) : qtyPO * unitPrice;
+    const name = cleanItemName(it.name || '');
+    const prevRow = prevRecord?.rows.find(r => r.sku === it.sku);
+
+    let valueCI = prevRow ? prevRow.valueCI : null;
+    let fromCi = false;
+    if (valueCI == null) {
+      const ciVal = lookupCiAmount(ciAmountInfo.map, it.sku, name);
+      if (ciVal != null) { valueCI = ciVal; fromCi = true; autoFilledCount++; }
+    }
+
+    return {
+      sku: it.sku || '', name, qtyPO, unitPrice, valuePO,
+      valueCI, fromCi, diff: valueCI != null ? (valueCI - valuePO) : null,
+    };
+  });
+
+  if (step2) step2.style.display = 'block';
+  vrRenderReconTable();
+
+  if (autoFilledCount > 0) {
+    showToast(`✓ ${autoFilledCount} Value CI diisi otomatis dari Verifikasi CI${ciAmountInfo.fileName ? ' ('+ciAmountInfo.fileName+')' : ''}. Silakan periksa/edit bila perlu.`, 'success');
+  }
+}
+
+function vrPasteCiValues() {
+  if (!vrWorkingRows) return;
+  vrWorkingRows.forEach(r => { if (r.valueCI == null) r.valueCI = r.valuePO; });
+  vrRenderReconTable();
+  showToast('Value CI diisi contoh (= Value PO). Silakan sesuaikan dengan data CI asli.', 'success');
+}
+
+// Manual re-pull button — useful if a CI Verification was saved *after* this
+// PO was already opened in Value Reconciliation.
+function vrPullFromCi() {
+  if (!vrCurrentPoNumber || !vrWorkingRows) { showToast('Pilih PO terlebih dahulu.', 'error'); return; }
+  const info = getCiAmountMapForPo(vrCurrentPoNumber);
+  if (!Object.keys(info.map).length) {
+    showToast('Belum ada data Value CI dari Verifikasi CI untuk PO ini. Lakukan Verifikasi CI terlebih dahulu (kolom Amount/Value pada file CI).', 'warning');
     return;
   }
-  sel.innerHTML = '<option value="">— Pilih CI —</option>' + options.map(c =>
-    `<option value="${c.ciNumber}">${c.ciNumber} · ${c.currency || '—'} ${Number(c.value || 0).toLocaleString()}</option>`
-  ).join('');
-  if (cur && options.some(c => c.ciNumber === cur)) sel.value = cur;
+  let count = 0;
+  vrWorkingRows.forEach(r => {
+    const ciVal = lookupCiAmount(info.map, r.sku, r.name);
+    if (ciVal != null) {
+      r.valueCI = ciVal;
+      r.diff = ciVal - r.valuePO;
+      r.fromCi = true;
+      count++;
+    }
+  });
+  vrRenderReconTable();
+  if (count > 0) showToast(`✓ ${count} item Value CI ditarik dari Verifikasi CI${info.fileName ? ' ('+info.fileName+')' : ''}.`, 'success');
+  else showToast('Tidak ada SKU/nama yang cocok dengan data Verifikasi CI.', 'warning');
 }
 
-// ── Term Pembayaran toggle ─────────────────────────────────────
-function vrTermChanged() {
-  const term = document.getElementById('vr-pay-term')?.value;
-  const wrap = document.getElementById('vr-pay-term-manual-wrap');
-  if (wrap) wrap.style.display = term === 'manual' ? 'block' : 'none';
+function vrRowStatus(row) {
+  if (row.valueCI == null) return { status: 'pending', label: 'Belum diisi' };
+  const diff = row.diff;
+  if (Math.abs(diff) < 0.005) return { status: 'match', label: 'Match' };
+  if (diff < 0) return { status: 'kurang', label: 'Kurang' };
+  return { status: 'lebih', label: 'Lebih' };
 }
 
-function vrGetTermPercent() {
-  const term = document.getElementById('vr-pay-term')?.value || '100';
-  if (term === 'manual') {
-    const manual = parseFloat(document.getElementById('vr-pay-term-manual')?.value || '0');
-    return { term: 'manual', percent: isNaN(manual) ? 0 : manual };
+function vrStatusBadgeSmall(status, label) {
+  const cls = status === 'match' ? 'badge-green' : status === 'kurang' ? 'badge-red' : status === 'lebih' ? 'badge-orange' : 'badge-gray';
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function vrDiffCellHtml(r) {
+  return r.valueCI == null ? '—' :
+    Math.abs(r.diff) < 0.005 ? `<span class="sel-zero">0.00</span>` :
+    r.diff > 0 ? `<span class="sel-pos">+${r.diff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` :
+    `<span class="sel-neg">${r.diff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+}
+
+// Refresh only the diff/status cells for one row (used while typing) — this
+// deliberately avoids re-rendering the whole table on every keystroke, which
+// was resetting the input's cursor/focus after every character typed.
+function vrUpdateRowDisplay(idx) {
+  const r = vrWorkingRows && vrWorkingRows[idx];
+  if (!r) return;
+  const diffCell   = document.getElementById(`vr-diff-${idx}`);
+  const statusCell = document.getElementById(`vr-status-${idx}`);
+  if (diffCell)   diffCell.innerHTML = vrDiffCellHtml(r);
+  if (statusCell) { const { status, label } = vrRowStatus(r); statusCell.innerHTML = vrStatusBadgeSmall(status, label); }
+}
+
+function vrUpdateSummaryStrip() {
+  const strip = document.getElementById('vr-summary-strip');
+  if (!strip || !vrWorkingRows) return;
+  const filled  = vrWorkingRows.filter(r => r.valueCI != null);
+  const totalPO = vrWorkingRows.reduce((s, r) => s + r.valuePO, 0);
+  const totalCI = filled.reduce((s, r) => s + r.valueCI, 0);
+  const nMatch  = filled.filter(r => vrRowStatus(r).status === 'match').length;
+  const nKurang = filled.filter(r => vrRowStatus(r).status === 'kurang').length;
+  const nLebih  = filled.filter(r => vrRowStatus(r).status === 'lebih').length;
+  strip.innerHTML = `
+    <span class="ci-legend match">● Match: ${nMatch}</span>
+    <span class="ci-legend kurang">● Kurang: ${nKurang}</span>
+    <span class="ci-legend lebih">● Lebih: ${nLebih}</span>
+    <span style="margin-left:auto;font-size:12px;color:var(--c-text-sub)">
+      Total Value PO: <strong>${totalPO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+      &nbsp;·&nbsp; Total Value CI (terisi): <strong>${totalCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>
+    </span>`;
+}
+
+// Called on every keystroke — parses the raw text, updates state + the
+// diff/status cells only. The input box itself is left untouched so the
+// user's cursor position and focus are never lost while typing.
+function vrRecalcRow(idx) {
+  const input = document.getElementById(`vr-ci-value-${idx}`);
+  if (!input || !vrWorkingRows || !vrWorkingRows[idx]) return;
+  const raw = input.value.trim();
+  vrWorkingRows[idx].valueCI = raw === '' ? null : parseMoneyNum(raw);
+  vrWorkingRows[idx].fromCi  = false; // manual edit supersedes any auto-fill
+  vrWorkingRows[idx].diff    = vrWorkingRows[idx].valueCI != null ? (vrWorkingRows[idx].valueCI - vrWorkingRows[idx].valuePO) : null;
+  vrUpdateRowDisplay(idx);
+  vrUpdateSummaryStrip();
+}
+
+// On blur, normalise the textbox to a clean formatted number (e.g. 1200 -> 1,200.00)
+function vrFormatValueInput(idx) {
+  const input = document.getElementById(`vr-ci-value-${idx}`);
+  if (!input || !vrWorkingRows || !vrWorkingRows[idx]) return;
+  const r = vrWorkingRows[idx];
+  input.value = r.valueCI != null ? r.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+}
+
+function vrRenderReconTable() {
+  const tbody = document.getElementById('vr-recon-tbody');
+  if (!tbody || !vrWorkingRows) return;
+
+  tbody.innerHTML = vrWorkingRows.map((r, idx) => {
+    const { status, label } = vrRowStatus(r);
+    const fromCiTag = r.fromCi
+      ? `<span title="Diisi otomatis dari Verifikasi CI — boleh diedit" style="color:var(--c-blue-dark);font-size:12px;margin-left:4px;white-space:nowrap"><i class="ti ti-wand"></i></span>`
+      : '';
+    return `
+      <tr>
+        <td style="font-family:monospace;font-size:12px">${r.sku || '—'}</td>
+        <td>${r.name || '—'}</td>
+        <td class="num">${r.qtyPO.toLocaleString()}</td>
+        <td class="num">${r.unitPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td class="num"><strong>${r.valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+        <td class="num">
+          <input type="text" inputmode="decimal" id="vr-ci-value-${idx}"
+              value="${r.valueCI != null ? r.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : ''}"
+              placeholder="0.00" class="vr-ci-input" style="width:130px;text-align:right"
+              oninput="vrRecalcRow(${idx})" onblur="vrFormatValueInput(${idx})" />${fromCiTag}
+        </td>
+        <td class="num" id="vr-diff-${idx}">${vrDiffCellHtml(r)}</td>
+        <td id="vr-status-${idx}">${vrStatusBadgeSmall(status, label)}</td>
+      </tr>`;
+  }).join('');
+
+  vrUpdateSummaryStrip();
+}
+
+// ── Save reconciliation ─────────────────────────────────────────
+function vrSaveReconciliation() {
+  if (!vrCurrentPoNumber || !vrWorkingRows) { showToast('Pilih PO terlebih dahulu.', 'error'); return; }
+  if (vrWorkingRows.some(r => r.valueCI == null)) {
+    if (!confirm('Ada item yang Value CI-nya belum diisi. Tetap simpan rekonsiliasi ini?')) return;
   }
-  return { term, percent: parseFloat(term) };
-}
 
-// ── Reconciliation calculation ────────────────────────────────
-function calcPayStatus(rec) {
-  const ci = CI_VALUES.find(c => c.ciNumber === rec.ciNumber && c.poNumber === rec.poNumber);
-  if (!ci) return { status: 'no-ci', label: 'CI Tidak Ditemukan' };
-  if (ci.currency && rec.currency && ci.currency !== rec.currency) return { status: 'currency-mismatch', label: 'Currency Mismatch' };
-  const expected = ci.value * ((rec.termPercent || 0) / 100);
-  const diff = (rec.value || 0) - expected;
-  const tolerance = Math.max(expected * 0.001, 1);
-  if (Math.abs(diff) <= tolerance) return { status: 'match', label: 'Match' };
-  if (diff < 0) return { status: 'kurang', label: 'Kurang Bayar' };
-  return { status: 'lebih', label: 'Lebih Bayar' };
-}
+  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === vrCurrentPoNumber);
+  const rows = vrWorkingRows.map(r => ({ ...r }));
+  const totalValuePO = rows.reduce((s, r) => s + r.valuePO, 0);
+  const totalValueCI = rows.reduce((s, r) => s + (r.valueCI || 0), 0);
+  const totalDiff = totalValueCI - totalValuePO;
+  const statuses = rows.map(r => vrRowStatus(r).status).filter(s => s !== 'pending');
+  const hasKurang = statuses.includes('kurang');
+  const hasLebih  = statuses.includes('lebih');
+  const overallStatus = Math.abs(totalDiff) < 0.005 && !hasKurang && !hasLebih ? 'match'
+    : hasKurang && hasLebih ? 'mixed' : hasKurang ? 'kurang' : 'lebih';
 
-function vrExpectedValue(rec) {
-  const ci = CI_VALUES.find(c => c.ciNumber === rec.ciNumber && c.poNumber === rec.poNumber);
-  if (!ci) return 0;
-  return ci.value * ((rec.termPercent || 0) / 100);
-}
-
-function vrStatusBadge(status, label) {
-  const cls = {
-    'match': 'badge-green',
-    'kurang': 'badge-red',
-    'lebih': 'badge-orange',
-    'currency-mismatch': 'badge-red',
-    'no-ci': 'badge-gray',
+  const record = {
+    id: Date.now(),
+    poNumber: vrCurrentPoNumber,
+    brand: po ? (po.supplierLabel || po.supplier) : '—',
+    currency: po?.currency || 'USD',
+    reconciledAt: new Date().toISOString(),
+    rows, totalValuePO, totalValueCI, totalDiff, status: overallStatus,
   };
-  return `<span class="badge ${cls[status] || 'badge-gray'}"><span class="badge-dot"></span>${label}</span>`;
+  VR_RECORDS.unshift(record);
+
+  renderVrHistory();
+  updateVrKpis();
+  showToast('✓ Value Reconciliation berhasil disimpan!', 'success');
 }
 
-function vrTermLabel(rec) {
-  if (rec.term === 'manual') return `Manual (${rec.termPercent}%)`;
-  return `${rec.termPercent}%`;
+// ── History table ────────────────────────────────────────────
+function vrStatusBadgeBig(status) {
+  const map = { match: ['badge-green','Match'], kurang: ['badge-red','Kurang'], lebih: ['badge-orange','Lebih'], mixed: ['badge-blue','Mixed'] };
+  const [cls, label] = map[status] || ['badge-gray', status];
+  return `<span class="badge ${cls}">${label}</span>`;
 }
 
-// ── Render Reconciliation Table ────────────────────────────────
-function renderVrTable(filter = '') {
-  const tbody = document.getElementById('vr-tbody');
+function renderVrHistory(filter = '', statusFilter = '') {
+  const tbody = document.getElementById('vr-history-tbody');
   if (!tbody) return;
-  const rows = filter ? PAYMENT_PROOFS.filter(r =>
-    (r.poNumber || '').toUpperCase().includes(filter.toUpperCase()) ||
-    (r.ciNumber || '').toUpperCase().includes(filter.toUpperCase())
-  ) : PAYMENT_PROOFS;
+  const q = filter.toLowerCase();
+  const data = VR_RECORDS.filter(r =>
+    (!q || r.poNumber.toLowerCase().includes(q) || (r.brand||'').toLowerCase().includes(q)) &&
+    (!statusFilter || r.status === statusFilter)
+  );
 
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--c-text-hint)">
-      <i class="ti ti-inbox" style="font-size:28px;display:block;margin-bottom:8px"></i>
-      Belum ada data rekonsiliasi. Tambah data CI, lalu input Bukti Pembayaran pada form di bawah.
-    </td></tr>`;
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada rekonsiliasi tersimpan.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = PAYMENT_PROOFS.map((r, idx) => {
-    if (filter && !rows.includes(r)) return '';
-    const { status, label } = calcPayStatus(r);
-    const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
-    const expected = vrExpectedValue(r);
-    const diff = (r.value || 0) - expected;
-    const diffStr = !ci ? '—' : diff === 0 ? '<span class="sel-zero">0</span>'
-      : diff > 0 ? `<span class="sel-pos">+${diff.toLocaleString()}</span>`
-      : `<span class="sel-neg">${diff.toLocaleString()}</span>`;
+  tbody.innerHTML = data.map(r => {
+    const idx = VR_RECORDS.indexOf(r);
+    const diffStr = Math.abs(r.totalDiff) < 0.005 ? `<span class="sel-zero">0.00</span>` :
+      r.totalDiff > 0 ? `<span class="sel-pos">+${r.totalDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` :
+      `<span class="sel-neg">${r.totalDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
     return `<tr>
       <td style="font-family:monospace;font-size:12px">${r.poNumber}</td>
-      <td style="font-family:monospace;font-size:12px">${r.ciNumber || '—'}</td>
-      <td style="font-size:12px">${vrTermLabel(r)}</td>
-      <td class="num">${ci ? (ci.value || 0).toLocaleString() : '—'}</td>
-      <td class="num">${ci ? expected.toLocaleString() : '—'}</td>
-      <td style="font-size:12px">${r.tanggal || '—'}</td>
-      <td class="num">${(r.value || 0).toLocaleString()}</td>
+      <td>${r.brand}</td>
+      <td style="font-size:12px">${fmtDate(r.reconciledAt.slice(0,10))}</td>
+      <td class="num">${r.totalValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+      <td class="num">${r.totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
       <td class="num">${diffStr}</td>
-      <td>${vrStatusBadge(status, label)}</td>
+      <td>${vrStatusBadgeBig(r.status)}</td>
       <td><button class="btn-ghost btn-sm" onclick="vrShowDetail(${idx})"><i class="ti ti-eye"></i></button>
-          <button class="btn-ghost btn-sm" onclick="vrDelete(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
+          <button class="btn-ghost btn-sm" onclick="vrDeleteRecord(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--c-text-hint)">Tidak ada data untuk pencarian ini.</td></tr>`;
-
-  updateVrKpis();
+  }).join('');
 }
 
-function updateVrKpis() {
-  const total  = PAYMENT_PROOFS.length;
-  const match  = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'match').length;
-  const kurang = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'kurang').length;
-  const lebih  = PAYMENT_PROOFS.filter(r => calcPayStatus(r).status === 'lebih').length;
-  const setEl  = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-  setEl('vr-kpi-total', total);
-  setEl('vr-kpi-match', match);
-  setEl('vr-kpi-kurang', kurang);
-  setEl('vr-kpi-lebih', lebih);
+function vrFilterHistory() {
+  const q = document.getElementById('vr-history-search')?.value || '';
+  const status = document.getElementById('vr-history-status-filter')?.value || '';
+  renderVrHistory(q, status);
 }
 
-// ── VR Detail Modal ───────────────────────────────────────────
-function vrShowDetail(idx) {
-  const r = PAYMENT_PROOFS[idx];
+function vrDeleteRecord(idx) {
+  const r = VR_RECORDS[idx];
   if (!r) return;
-  const { status, label } = calcPayStatus(r);
-  const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
-  const expected = vrExpectedValue(r);
-  const diff = (r.value || 0) - expected;
-  const po = (MOCK_PO_DATA || []).find(p => p.poNumber === r.poNumber);
+  if (!confirm(`Hapus rekonsiliasi untuk PO ${r.poNumber}?`)) return;
+  VR_RECORDS.splice(idx, 1);
+  renderVrHistory();
+  updateVrKpis();
+  showToast('Rekonsiliasi dihapus.', 'success');
+}
 
+function vrShowDetail(idx) {
+  const r = VR_RECORDS[idx];
+  const content = document.getElementById('vr-detail-content');
   const modal = document.getElementById('vr-detail-modal');
-  document.getElementById('vr-detail-content').innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-      <div class="form-card" style="margin:0">
-        <div class="form-card-title" style="font-size:13px"><i class="ti ti-file-invoice"></i> Data CI (Acuan)</div>
-        <table class="data-table" style="font-size:13px">
-          <tr><td style="color:var(--c-text-hint)">PO Number</td><td><strong>${r.poNumber}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Vendor</td><td>${po?.supplierLabel || po?.supplier || '—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Nomor CI</td><td><strong>${r.ciNumber || '—'}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Currency CI</td><td><span class="badge badge-blue">${ci?.currency || '—'}</span></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Value CI</td><td><strong>${ci ? (ci.value || 0).toLocaleString() : '—'}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Term Pembayaran</td><td>${vrTermLabel(r)}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Expected Value</td><td><strong>${ci ? expected.toLocaleString() : '—'}</strong></td></tr>
-        </table>
-      </div>
-      <div class="form-card" style="margin:0">
-        <div class="form-card-title" style="font-size:13px"><i class="ti ti-receipt"></i> Data Payment Proof</div>
-        <table class="data-table" style="font-size:13px">
-          <tr><td style="color:var(--c-text-hint)">Tanggal Bayar</td><td>${r.tanggal || '—'}</td></tr>
-          <tr><td style="color:var(--c-text-hint)">Currency Bayar</td><td><span class="badge ${ci && ci.currency !== r.currency ? 'badge-red' : 'badge-green'}">${r.currency || '—'}</span></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Value Dibayar</td><td><strong>${(r.value || 0).toLocaleString()}</strong></td></tr>
-          <tr><td style="color:var(--c-text-hint)">Referensi</td><td style="font-family:monospace;font-size:12px">${r.reference || '—'}</td></tr>
-        </table>
-      </div>
-    </div>
+  if (!r || !content || !modal) return;
 
-    <!-- Reconciliation Summary -->
-    <div class="form-card" style="margin:0 0 16px;border-left:3px solid ${status === 'match' ? 'var(--c-green,#22c55e)' : (status === 'currency-mismatch' || status === 'no-ci') ? '#ef4444' : status === 'kurang' ? '#ef4444' : '#f97316'}">
-      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-        <div>${vrStatusBadge(status, label)}</div>
-        <div style="font-size:13px"><span style="color:var(--c-text-hint)">Selisih:</span> <strong style="color:${diff === 0 ? 'var(--c-green,#22c55e)' : diff > 0 ? 'var(--c-blue)' : '#ef4444'}">${!ci ? '—' : diff === 0 ? '0' : diff > 0 ? '+' + diff.toLocaleString() : diff.toLocaleString()} ${r.currency || ''}</strong></div>
-        ${ci && ci.currency !== r.currency ? `<div class="hint-box" style="background:rgba(239,68,68,.08);border-color:#ef4444;color:#dc2626;padding:6px 12px;font-size:12px"><i class="ti ti-alert-triangle"></i> Currency Mismatch: CI dalam ${ci.currency}, Payment Proof dalam ${r.currency}.</div>` : ''}
-        ${!ci ? `<div class="hint-box" style="background:rgba(239,68,68,.08);border-color:#ef4444;color:#dc2626;padding:6px 12px;font-size:12px"><i class="ti ti-alert-triangle"></i> Nomor CI ${r.ciNumber || '(kosong)'} belum terdaftar di Data Nilai CI untuk PO ${r.poNumber}.</div>` : ''}
-      </div>
+  content.innerHTML = `
+    <div class="ci-po-info-bar" style="margin-bottom:14px">
+      <div class="ci-po-info-item"><span class="ci-po-info-label">PO Number</span><span class="ci-po-info-val" style="color:var(--c-blue-dark);font-weight:700">${r.poNumber}</span></div>
+      <div class="ci-po-info-item"><span class="ci-po-info-label">Brand</span><span class="ci-po-info-val">${r.brand}</span></div>
+      <div class="ci-po-info-item"><span class="ci-po-info-label">Direkonsiliasi</span><span class="ci-po-info-val">${fmtDate(r.reconciledAt.slice(0,10))}</span></div>
+      <div class="ci-po-info-item"><span class="ci-po-info-label">Status</span><span class="ci-po-info-val">${vrStatusBadgeBig(r.status)}</span></div>
     </div>
-
-    <!-- Comment -->
-    <div class="form-card" style="margin:0 0 16px">
-      <div class="form-card-title" style="font-size:13px"><i class="ti ti-message"></i> Catatan / Komentar</div>
-      <textarea id="vr-detail-comment" style="width:100%;min-height:72px;padding:8px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;resize:vertical;font-family:inherit"
-        placeholder="Tambah catatan penyebab selisih atau keterangan lainnya...">${r.comment || ''}</textarea>
-      <button class="btn-primary btn-sm" style="margin-top:8px" onclick="vrSaveComment(${idx})"><i class="ti ti-check"></i> Simpan Catatan</button>
-    </div>
-
-    <!-- Audit Trail -->
-    <div class="form-card" style="margin:0">
-      <div class="form-card-title" style="font-size:13px"><i class="ti ti-history"></i> Audit Trail</div>
-      ${(r.auditTrail || []).length ? `<table class="data-table" style="font-size:12px">
-        <thead><tr><th>Waktu</th><th>User</th><th>Aksi</th><th>Detail</th></tr></thead>
-        <tbody>${(r.auditTrail || []).map(a => `<tr>
-          <td style="color:var(--c-text-hint);white-space:nowrap">${new Date(a.ts).toLocaleString('id-ID')}</td>
-          <td>${a.user}</td><td>${a.action}</td><td style="font-size:11px">${a.detail}</td>
-        </tr>`).join('')}</tbody>
-      </table>` : '<div style="color:var(--c-text-hint);font-size:13px;padding:8px 0">Belum ada riwayat aktivitas.</div>'}
+    <div class="table-wrap" style="max-height:360px;overflow:auto">
+      <table class="data-table">
+        <thead><tr><th>SKU</th><th>Nama</th><th class="num">Qty PO</th><th class="num">Value PO</th><th class="num">Value CI</th><th class="num">Selisih</th><th>Status</th></tr></thead>
+        <tbody>
+          ${r.rows.map(row => {
+            const { status, label } = vrRowStatus(row);
+            const diffTxt = row.valueCI == null ? '—' :
+              Math.abs(row.diff) < 0.005 ? `<span class="sel-zero">0.00</span>` :
+              row.diff > 0 ? `<span class="sel-pos">+${row.diff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` :
+              `<span class="sel-neg">${row.diff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+            return `<tr>
+              <td style="font-family:monospace;font-size:12px">${row.sku || '—'}</td>
+              <td>${row.name || '—'}</td>
+              <td class="num">${row.qtyPO.toLocaleString()}</td>
+              <td class="num">${row.valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+              <td class="num">${row.valueCI != null ? row.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+              <td class="num">${diffTxt}</td>
+              <td>${vrStatusBadgeSmall(status, label)}</td>
+            </tr>`;
+          }).join('')}
+          <tr class="total-row">
+            <td colspan="3">Total</td>
+            <td class="num"><strong>${r.totalValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+            <td class="num"><strong>${r.totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+            <td class="num"><strong>${r.totalDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
     </div>`;
-
   modal.style.display = 'flex';
 }
 
-function vrSaveComment(idx) {
-  const r = PAYMENT_PROOFS[idx];
-  if (!r) return;
-  const comment = document.getElementById('vr-detail-comment')?.value.trim() || '';
-  r.comment = comment;
-  r.auditTrail = r.auditTrail || [];
-  r.auditTrail.unshift(vrLog('Komentar', comment.slice(0, 80)));
-  showToast('Catatan disimpan.', 'success');
-}
-
 function vrCloseDetail() {
-  const m = document.getElementById('vr-detail-modal');
-  if (m) m.style.display = 'none';
-  renderVrTable();
+  const modal = document.getElementById('vr-detail-modal');
+  if (modal) modal.style.display = 'none';
 }
 
-function vrDelete(idx) {
-  if (!confirm('Hapus data rekonsiliasi ini?')) return;
-  PAYMENT_PROOFS.splice(idx, 1);
-  renderVrTable();
-  showToast('Data dihapus.', 'success');
-}
+// ── KPIs ──────────────────────────────────────────────────────
+function updateVrKpis() {
+  const totalEl  = document.getElementById('vr-kpi-total');
+  const matchEl  = document.getElementById('vr-kpi-match');
+  const kurangEl = document.getElementById('vr-kpi-kurang');
+  const lebihEl  = document.getElementById('vr-kpi-lebih');
+  if (!totalEl) return;
 
-// ── Payment Proof Upload (optional AI-assisted) ────────────────
-const PAYMENT_PROOF_SYSTEM_PROMPT = `You are a payment proof / bank transfer receipt data extraction assistant.
-Extract key data from a bank transfer receipt or payment proof document and return ONLY valid JSON.
+  const allRows = VR_RECORDS.flatMap(r => r.rows).filter(r => r.valueCI != null);
+  const nMatch  = allRows.filter(r => vrRowStatus(r).status === 'match').length;
+  const nKurang = allRows.filter(r => vrRowStatus(r).status === 'kurang').length;
+  const nLebih  = allRows.filter(r => vrRowStatus(r).status === 'lebih').length;
 
-JSON structure:
-{
-  "tanggal": "",
-  "value": 0,
-  "currency": "",
-  "reference": "",
-  "po_reference": null,
-  "ci_reference": null
-}
-
-EXTRACTION RULES:
-1. tanggal: transaction/transfer date, convert to YYYY-MM-DD.
-2. value: the transferred amount (numeric only, no currency symbol/thousand separators).
-3. currency: 3-letter currency code (e.g. USD, IDR, JPY). If not explicit, infer from symbol (Rp → IDR, $ → USD).
-4. reference: bank reference / transaction number if present.
-5. po_reference: any PO number mentioned (e.g. "SBI/PO/...").
-6. ci_reference: any CI / invoice number mentioned.
-
-Return ONLY valid JSON, no explanation.`;
-
-async function parsePaymentProofWithAI(text) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: PAYMENT_PROOF_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: `Extract payment proof data from the following text. Return ONLY valid JSON.\n\nTEXT:\n${text}` }]
-    })
-  });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message);
-  const raw = data.content.map(b => b.text || '').join('');
-  return JSON.parse(raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim());
-}
-
-function parsePaymentProofHeuristic(text) {
-  const t = text.replace(/\r/g, '');
-  const out = { tanggal: null, value: 0, currency: '', reference: null, po_reference: null, ci_reference: null };
-
-  const tglMatch = t.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (tglMatch) out.tanggal = `${tglMatch[3]}-${tglMatch[2]}-${tglMatch[1]}`;
-
-  const curMatch = t.match(/\b(USD|IDR|JPY|EUR|KRW|SGD)\b/i) || (/Rp\s?\d/i.test(t) ? ['', 'IDR'] : null);
-  if (curMatch) out.currency = curMatch[1].toUpperCase();
-
-  const amountMatch = t.match(/(?:Rp|USD|IDR|JPY|EUR)?\s?([\d]{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?)/i);
-  if (amountMatch) out.value = parseMoneyNum(amountMatch[1]);
-
-  const refMatch = t.match(/(?:Ref(?:erence)?|No\.?\s*Ref)\s*[:\s]*([A-Z0-9\-]+)/i);
-  if (refMatch) out.reference = refMatch[1];
-
-  const poMatch = t.match(/\b(SBI\/[A-Z0-9\/]+|PO[-\s]?\d{3,})/i);
-  if (poMatch) out.po_reference = poMatch[1];
-
-  const ciMatch = t.match(/\bCI[-\s]?[A-Z0-9\-]+/i);
-  if (ciMatch) out.ci_reference = ciMatch[0];
-
-  return out;
-}
-
-function handleVrPayDrop(event) {
-  event.preventDefault();
-  document.getElementById('vr-pay-drop-zone').classList.remove('dragover');
-  const file = event.dataTransfer.files[0];
-  if (file) handleVrPayUpload(file);
-}
-
-async function handleVrPayUpload(file) {
-  if (!file) return;
-  const dropContent = document.getElementById('vr-pay-drop-content');
-  const loading     = document.getElementById('vr-pay-loading');
-  dropContent.style.display = 'none';
-  loading.style.display     = 'block';
-
-  try {
-    const ext = file.name.split('.').pop().toLowerCase();
-    let parsed;
-    if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
-      const ab = await file.arrayBuffer();
-      const wb = window.XLSX.read(ab, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      const flat = rows.flat().join(' ');
-      parsed = parsePaymentProofHeuristic(flat);
-      parsed._source = 'excel';
-    } else {
-      const pdfText = await extractTextFromPdf(file);
-      try {
-        parsed = await parsePaymentProofWithAI(pdfText);
-        parsed._source = 'ai-pdf';
-      } catch (e) {
-        parsed = parsePaymentProofHeuristic(pdfText);
-        parsed._source = 'heuristic-pdf';
-      }
-    }
-    vrCurrentPay = parsed;
-    vrFillPayReviewForm(parsed);
-    showToast(`✓ Bukti pembayaran terbaca (${parsed._source}). Cek & lengkapi data di bawah.`, 'success');
-  } catch (err) {
-    showToast('Gagal membaca bukti pembayaran: ' + err.message, 'error');
-  } finally {
-    loading.style.display = 'none';
-    dropContent.style.display = 'block';
-  }
-}
-
-function vrFillPayReviewForm(d) {
-  setField('vr-pay-date', d.tanggal);
-  setField('vr-pay-value', d.value);
-  setField('vr-pay-currency', d.currency);
-  setField('vr-pay-ref', d.reference);
-
-  if (d.po_reference) {
-    const sel = document.getElementById('vr-pay-po-select');
-    const match = (MOCK_PO_DATA || []).find(p => p.poNumber === d.po_reference);
-    if (match && sel) { sel.value = match.poNumber; vrPayPoChanged(); }
-  }
-  if (d.ci_reference) {
-    const sel = document.getElementById('vr-pay-ci-select');
-    if (sel && [...sel.options].some(o => o.value === d.ci_reference)) sel.value = d.ci_reference;
-  }
-}
-
-// ── Save Payment Proof / Reconciliation ────────────────────────
-function vrSave() {
-  const btn = document.getElementById('vr-save-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2" style="animation:spin .6s linear infinite"></i> Menyimpan…'; }
-
-  try {
-    const poNumber = document.getElementById('vr-pay-po-select')?.value || '';
-    if (!poNumber) {
-      showToast('Pilih Nomor PO yang dituju terlebih dahulu.', 'error');
-      const sel = document.getElementById('vr-pay-po-select');
-      if (sel) { sel.style.borderColor = '#ef4444'; setTimeout(() => sel.style.borderColor = '', 2000); }
-      return;
-    }
-
-    const ciNumber = document.getElementById('vr-pay-ci-select')?.value || '';
-    if (!ciNumber) {
-      showToast('Pilih Nomor CI yang dituju terlebih dahulu.', 'error');
-      const sel = document.getElementById('vr-pay-ci-select');
-      if (sel) { sel.style.borderColor = '#ef4444'; setTimeout(() => sel.style.borderColor = '', 2000); }
-      return;
-    }
-
-    const tanggal = document.getElementById('vr-pay-date')?.value || '';
-    if (!tanggal) {
-      showToast('Tanggal payment proof wajib diisi.', 'error');
-      const el = document.getElementById('vr-pay-date');
-      if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); }
-      return;
-    }
-
-    const valueRaw = document.getElementById('vr-pay-value')?.value || '';
-    const value = parseMoneyNum(valueRaw);
-    if (!value) {
-      showToast('Value payment proof wajib diisi.', 'error');
-      const el = document.getElementById('vr-pay-value');
-      if (el) { el.style.borderColor = '#ef4444'; el.focus(); setTimeout(() => el.style.borderColor = '', 2000); }
-      return;
-    }
-
-    const { term, percent } = vrGetTermPercent();
-    if (!percent) {
-      showToast('Isi persentase term pembayaran (manual) terlebih dahulu.', 'error');
-      return;
-    }
-
-    const currency  = (document.getElementById('vr-pay-currency')?.value || '').trim().toUpperCase();
-    const reference = (document.getElementById('vr-pay-ref')?.value || '').trim();
-
-    const ci = CI_VALUES.find(c => c.ciNumber === ciNumber && c.poNumber === poNumber);
-    const audit = [vrLog('Simpan Payment Proof', `Payment ${value} (${currency || '—'}) untuk PO ${poNumber} / CI ${ciNumber} · Term ${term === 'manual' ? percent + '% manual' : percent + '%'}`)];
-
-    const record = {
-      poNumber, ciNumber, tanggal, value,
-      currency: currency || (ci?.currency || ''),
-      term, termPercent: percent,
-      reference,
-      comment: '',
-      auditTrail: audit,
-      _savedAt: new Date().toISOString(),
-    };
-
-    PAYMENT_PROOFS.push(record);
-    renderVrTable();
-    vrResetForm();
-
-    const { label } = calcPayStatus(record);
-    showToast(`✓ Rekonsiliasi disimpan — Status: ${label}`, 'success');
-    const vrCard = document.getElementById('vr-tbody')?.closest('.form-card');
-    if (vrCard && typeof vrCard.scrollIntoView === 'function') vrCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  } catch (err) {
-    console.error('vrSave error:', err);
-    showToast('Error saat menyimpan: ' + err.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi'; }
-  }
-}
-
-function vrResetForm() {
-  ['vr-pay-date', 'vr-pay-value', 'vr-pay-currency', 'vr-pay-term-manual', 'vr-pay-ref'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) { el.value = ''; el.style.borderColor = ''; }
-  });
-  const term = document.getElementById('vr-pay-term');
-  if (term) term.value = '50';
-  vrTermChanged();
-
-  const poSel = document.getElementById('vr-pay-po-select');
-  if (poSel) { poSel.value = ''; poSel.style.borderColor = ''; }
-  populateVrCiSelectForPo('');
-  const ciSel = document.getElementById('vr-pay-ci-select');
-  if (ciSel) ciSel.style.borderColor = '';
-
-  const fi = document.getElementById('vr-pay-file');       if (fi) fi.value = '';
-  const dc = document.getElementById('vr-pay-drop-content'); if (dc) dc.style.display = 'block';
-  const dl = document.getElementById('vr-pay-loading');      if (dl) dl.style.display = 'none';
-  const pv = document.getElementById('vr-pay-preview');      if (pv) pv.innerHTML = '';
-
-  vrCurrentPay = null;
-}
-
-function vrFilterTable() {
-  const q = document.getElementById('vr-search')?.value || '';
-  renderVrTable(q);
-}
-
-function vrFilterStatus() {
-  const status = document.getElementById('vr-status-filter')?.value || '';
-  if (!status) { renderVrTable(); return; }
-  const tbody = document.getElementById('vr-tbody');
-  const filtered = PAYMENT_PROOFS.map((r, i) => ({ ...r, _idx: i })).filter(r => calcPayStatus(r).status === status);
-  if (!tbody) return;
-  tbody.innerHTML = filtered.map(r => {
-    const idx = r._idx;
-    const { status: s, label } = calcPayStatus(r);
-    const ci = CI_VALUES.find(c => c.ciNumber === r.ciNumber && c.poNumber === r.poNumber);
-    const expected = vrExpectedValue(r);
-    const diff = (r.value || 0) - expected;
-    const diffStr = !ci ? '—' : diff === 0 ? '<span class="sel-zero">0</span>'
-      : diff > 0 ? `<span class="sel-pos">+${diff.toLocaleString()}</span>`
-      : `<span class="sel-neg">${diff.toLocaleString()}</span>`;
-    return `<tr>
-      <td style="font-family:monospace;font-size:12px">${r.poNumber}</td>
-      <td style="font-family:monospace;font-size:12px">${r.ciNumber || '—'}</td>
-      <td style="font-size:12px">${vrTermLabel(r)}</td>
-      <td class="num">${ci ? (ci.value || 0).toLocaleString() : '—'}</td>
-      <td class="num">${ci ? expected.toLocaleString() : '—'}</td>
-      <td style="font-size:12px">${r.tanggal || '—'}</td>
-      <td class="num">${(r.value || 0).toLocaleString()}</td>
-      <td class="num">${diffStr}</td>
-      <td>${vrStatusBadge(s, label)}</td>
-      <td><button class="btn-ghost btn-sm" onclick="vrShowDetail(${idx})"><i class="ti ti-eye"></i></button>
-          <button class="btn-ghost btn-sm" onclick="vrDelete(${idx})"><i class="ti ti-trash" style="color:var(--c-red,#ef4444)"></i></button></td>
-    </tr>`;
-  }).join('') || `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--c-text-hint)">Tidak ada data untuk filter ini.</td></tr>`;
+  totalEl.textContent  = VR_RECORDS.length;
+  matchEl.textContent  = nMatch;
+  kurangEl.textContent = nKurang;
+  lebihEl.textContent  = nLebih;
 }
 // ══════════════════════════════════════════════════════════════
 // NIE CENTER — Auto-Matching NIE BPOM untuk SKI
@@ -3620,54 +3530,107 @@ function updateGdriveStatus(connected) {
   }
 }
 
-// ── Search file di Google Drive ───────────────────────────────
-async function gdriveSearch() {
+// ── Manual search: cari file selain NIE ───────────────────────
+// Sama alurnya dengan box paste-NIE di atas (textarea multi-baris + status
+// per baris), bedanya di sini kata kunci bebas (nama produk, invoice, dll)
+// dan tidak dibatasi pola nomor NIE. Satu kata kunci bisa menghasilkan lebih
+// dari 1 file, jadi hasilnya ditampung ke tabel gdrive-results yang sudah
+// ada supaya user bisa pilih mana yang mau di-ZIP.
+function gdriveManualParseTerms() {
+  const raw = document.getElementById('gdrive-manual-input')?.value || '';
+  return [...new Set(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
+}
+
+function gdriveManualCount() {
+  const el = document.getElementById('gdrive-manual-count');
+  if (!el) return;
+  const n = gdriveManualParseTerms().length;
+  el.textContent = n ? `${n} kata kunci` : '';
+}
+
+function renderGdriveManualChips(terms, statusByTerm) {
+  const area = document.getElementById('gdrive-manual-chip-area');
+  if (!area) return;
+  area.innerHTML = terms.map(term => {
+    let statusHtml = '<span style="color:var(--c-text-hint)">…</span>';
+    if (statusByTerm) {
+      const n = statusByTerm[term];
+      if (n > 0)      statusHtml = `<span style="color:#16a34a;font-weight:600">✓ ${n} file</span>`;
+      else if (n === 0) statusHtml = `<span style="color:#dc2626">✗ tidak ada</span>`;
+      else            statusHtml = `<span style="color:#dc2626">✗ error</span>`;
+    }
+    return `<div style="display:inline-flex;align-items:center;gap:6px;background:var(--c-surface-2);border:0.5px solid var(--c-border);border-radius:6px;padding:5px 10px;font-size:12px">
+      <span>${term}</span><span>${statusHtml}</span>
+    </div>`;
+  }).join('');
+}
+
+async function gdriveManualSearchAndZip() {
   if (!gdriveAccessToken) { showToast('Login ke Google Drive dulu.', 'warning'); return; }
 
-  const query   = (document.getElementById('gdrive-search-input')?.value || '').trim();
-  const folderQ = (document.getElementById('gdrive-folder-input')?.value || '').trim();
-  const fileType= document.getElementById('gdrive-filetype')?.value || 'pdf';
+  const terms = gdriveManualParseTerms();
+  if (!terms.length) { showToast('Paste minimal 1 kata kunci / nama file, satu per baris.', 'warning'); return; }
 
-  if (!query) { showToast('Masukkan kata kunci pencarian.', 'warning'); return; }
+  const fileType = document.getElementById('gdrive-filetype')?.value || 'pdf';
+  const folderQ  = (document.getElementById('gdrive-folder-input')?.value || '').trim();
 
   const loadEl = document.getElementById('gdrive-search-loading');
   if (loadEl) loadEl.style.display = 'block';
   gdriveSearchResults = [];
   renderGdriveResults([]);
+  renderGdriveManualChips(terms, null);
 
-  try {
-    // Build Drive API query
-    let q = `name contains '${query.replace(/'/g,"\\'")}' and trashed = false`;
-    if (fileType === 'pdf') q += ` and mimeType = 'application/pdf'`;
-    else if (fileType === 'xlsx') q += ` and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'`;
-    // Note: folder filter by name requires extra query; skip for simplicity
-
-    const resp = await gapi.client.drive.files.list({
-      q,
-      fields: 'files(id,name,mimeType,webViewLink,modifiedTime,size,parents)',
-      orderBy: 'modifiedTime desc',
-      pageSize: 50,
-    });
-
-    // Filter QR, lalu per nama dasar ambil 1 file terbaru saja
-    const filtered = (resp.result.files || []).filter(f => !/qr/i.test(f.name));
-    const seen = new Map();
-    filtered.forEach(f => {
-      // Normalisasi nama: hapus suffix versi/tanggal untuk grouping
-      const base = f.name.replace(/[_\-]v?\d+(\.pdf)?$/i, '').toLowerCase();
-      if (!seen.has(base)) seen.set(base, f); // sudah sorted desc, yg pertama = terbaru
-    });
-    const files = [...seen.values()];
-    gdriveSearchResults = files;
-    renderGdriveResults(files);
-
-    if (!files.length) showToast(`Tidak ditemukan file untuk "${query}".`, 'warning');
-    else showToast(`✓ Ditemukan ${files.length} file.`, 'success');
-  } catch (err) {
-    showToast('Gagal mencari: ' + (err.result?.error?.message || err.message), 'error');
-  } finally {
-    if (loadEl) loadEl.style.display = 'none';
+  // Resolve folder name -> folder ID(s) once, if a folder filter was given
+  let folderClause = '';
+  if (folderQ) {
+    try {
+      const fr = await gapi.client.drive.files.list({
+        q: `name contains '${folderQ.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id,name)', pageSize: 10,
+      });
+      const folders = fr.result.files || [];
+      if (folders.length) folderClause = ' and (' + folders.map(f => `'${f.id}' in parents`).join(' or ') + ')';
+      else showToast(`Folder "${folderQ}" tidak ditemukan — pencarian dilakukan di semua folder.`, 'warning');
+    } catch (e) { /* ignore, search without folder restriction */ }
   }
+
+  const allFound = [];
+  const statusByTerm = {};
+
+  for (const term of terms) {
+    try {
+      let q = `name contains '${term.replace(/'/g,"\\'")}' and trashed = false`;
+      if (fileType === 'pdf') q += ` and mimeType = 'application/pdf'`;
+      else if (fileType === 'xlsx') q += ` and mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'`;
+      q += folderClause;
+
+      const resp = await gapi.client.drive.files.list({
+        q, fields: 'files(id,name,mimeType,webViewLink,modifiedTime)', orderBy: 'modifiedTime desc', pageSize: 20,
+      });
+      const files = (resp.result.files || []).filter(f => !/qr/i.test(f.name));
+      files.forEach(f => allFound.push({ ...f, _term: term }));
+      statusByTerm[term] = files.length;
+    } catch (e) {
+      statusByTerm[term] = -1;
+    }
+  }
+
+  if (loadEl) loadEl.style.display = 'none';
+  renderGdriveManualChips(terms, statusByTerm);
+
+  // De-dupe by file id in case multiple terms matched the same file
+  const seen = new Map();
+  allFound.forEach(f => { if (!seen.has(f.id)) seen.set(f.id, f); });
+  const files = [...seen.values()];
+
+  gdriveSearchResults = files;
+  renderGdriveResults(files);
+
+  const termsWithHits = terms.filter(t => (statusByTerm[t] || 0) > 0).length;
+  if (!files.length) showToast('Tidak ada file yang ditemukan untuk kata kunci tersebut.', 'warning');
+  else showToast(`✓ ${files.length} file ditemukan dari ${termsWithHits}/${terms.length} kata kunci. Pilih file di bawah untuk didownload ZIP.`, 'success');
+
+  document.getElementById('gdrive-results')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ── Search NIE by nomor NIE dari hasil matching ───────────────
