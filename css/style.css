@@ -241,9 +241,9 @@ body {
   display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1;
 }
 .dash-hero-actions .btn-ghost {
-  background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.3); color: #fff;
+  background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.4); color: #fff; font-weight: 700;
 }
-.dash-hero-actions .btn-ghost:hover { background: rgba(255,255,255,.22); }
+.dash-hero-actions .btn-ghost:hover { background: rgba(255,255,255,.32); }
 .dash-hero-actions .btn-primary {
   background: #fff; color: #0F1629; border-color: #fff; font-weight: 700;
 }

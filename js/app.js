@@ -2489,6 +2489,210 @@ function initValRecon() {
   populateVrPoSelect();
   renderVrHistory();
   updateVrKpis();
+  pmRefreshFilters();
+}
+
+// ══════════════════════════════════════════════════════════════
+// PAYMENT PROOF MATCHING
+// Cocokkan nilai di bukti pembayaran (bisa full, DP sebagian, atau
+// gabungan beberapa PO sekaligus) dengan kombinasi Value PO / Value CI
+// yang sudah ada di sistem, lewat pencarian subset-sum.
+// ══════════════════════════════════════════════════════════════
+
+// Value CI "terbaik" yang diketahui untuk sebuah PO:
+// 1) hasil Value Reconciliation tersimpan (paling akurat — sudah dicek manual)
+// 2) kalau belum ada, fallback ke total Amount/Value dari hasil Verifikasi CI terakhir
+function getKnownValueCiForPo(poNumber) {
+  const vr = VR_RECORDS
+    .filter(r => r.poNumber === poNumber)
+    .sort((a, b) => new Date(b.reconciledAt) - new Date(a.reconciledAt))[0];
+  if (vr) return vr.totalValueCI;
+
+  const ciHist = loadCiHistory()
+    .filter(r => r.poNumber === poNumber)
+    .sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt))[0];
+  if (ciHist) {
+    const sum = (ciHist.rows || []).filter(r => !r.extraFromCi).reduce((s, r) => s + (r.ciAmount || 0), 0);
+    if (sum > 0) return sum;
+  }
+  return null;
+}
+
+function pmGetCandidatePool(basis) {
+  const pool = [];
+  getAllPoData().forEach(po => {
+    const currency = po.currency || 'USD';
+    const brand = po.supplierLabel || po.supplier || '—';
+    let value = null;
+    if (basis === 'ci') {
+      value = getKnownValueCiForPo(po.poNumber);
+    } else {
+      value = po.poValue != null && po.poValue !== ''
+        ? Number(po.poValue)
+        : (po.items || []).reduce((s, i) => s + (Number(i.valuePO) || (Number(i.qtyPO) || 0) * (Number(i.unitPrice) || 0)), 0);
+    }
+    if (!(value > 0)) return;
+    pool.push({ poNumber: po.poNumber, brand, currency, value });
+  });
+  return pool;
+}
+
+function pmRefreshFilters() {
+  const basisEl = document.getElementById('pm-basis');
+  const currencySel = document.getElementById('pm-currency');
+  const brandSel = document.getElementById('pm-brand');
+  const countEl = document.getElementById('pm-pool-count');
+  if (!basisEl || !currencySel || !brandSel) return;
+
+  const basis = basisEl.value || 'po';
+  const pool = pmGetCandidatePool(basis);
+
+  const currencies = [...new Set(pool.map(p => p.currency))].sort();
+  const curVal = currencySel.value;
+  currencySel.innerHTML = '<option value="">— Pilih Mata Uang —</option>' + currencies.map(c => `<option value="${c}">${c}</option>`).join('');
+  if (currencies.includes(curVal)) currencySel.value = curVal;
+  else if (currencies.length === 1) currencySel.value = currencies[0];
+
+  const brands = [...new Set(pool.map(p => p.brand))].sort();
+  const brandVal = brandSel.value;
+  brandSel.innerHTML = '<option value="">Semua Brand</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+  if (brands.includes(brandVal)) brandSel.value = brandVal;
+
+  if (countEl) {
+    countEl.textContent = pool.length
+      ? `${pool.length} PO memiliki data ${basis === 'ci' ? 'Value CI' : 'Value PO'} yang bisa dicocokkan.`
+      : `Belum ada PO dengan data ${basis === 'ci' ? 'Value CI (lakukan Verifikasi CI / Value Reconciliation dulu)' : 'Value PO'}.`;
+  }
+}
+
+function pmParsePercentages() {
+  const checked = Array.from(document.querySelectorAll('.pm-pct-chk:checked')).map(el => Number(el.value));
+  const customRaw = document.getElementById('pm-custom-pct')?.value || '';
+  const custom = customRaw.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0 && n <= 100);
+  return [...new Set([...checked, ...custom])];
+}
+
+// Backtracking subset-sum where each PO may contribute AT MOST ONE chosen
+// percent-variant per combination (can't pay "50% + 100%" of the same PO).
+// Bounded by an iteration cap + result cap so it stays fast in-browser even
+// with a fairly large candidate pool.
+function pmSubsetSearch(candidates, target, tolerance, maxItems) {
+  const sorted = [...candidates].sort((a, b) => b.amount - a.amount);
+  const results = [];
+  const MAX_RESULTS = 25;
+  const MAX_ITER = 400000;
+  let iter = 0;
+  let truncated = false;
+
+  function dfs(start, remaining, chosen) {
+    if (chosen.length > 0 && Math.abs(remaining) <= tolerance) {
+      results.push({ items: chosen.slice(), diff: remaining });
+      return; // don't extend an already-matching combo with more items
+    }
+    if (chosen.length >= maxItems) return;
+    for (let i = start; i < sorted.length; i++) {
+      iter++;
+      if (iter > MAX_ITER) { truncated = true; return; }
+      if (results.length >= MAX_RESULTS) return;
+      const c = sorted[i];
+      if (c.amount - tolerance > remaining) continue; // would overshoot beyond tolerance
+      if (chosen.some(x => x.poNumber === c.poNumber)) continue; // one variant per PO only
+      chosen.push(c);
+      dfs(i + 1, remaining - c.amount, chosen);
+      chosen.pop();
+      if (truncated || results.length >= MAX_RESULTS) return;
+    }
+  }
+
+  dfs(0, target, []);
+  results.sort((a, b) => a.items.length - b.items.length || Math.abs(a.diff) - Math.abs(b.diff));
+  return { results, truncated };
+}
+
+function pmFindMatches() {
+  const basis     = document.getElementById('pm-basis')?.value || 'po';
+  const currency  = document.getElementById('pm-currency')?.value;
+  const brand     = document.getElementById('pm-brand')?.value;
+  const target    = parseMoneyNum(document.getElementById('pm-paid-value')?.value || '');
+  const tolerance = Math.abs(parseMoneyNum(document.getElementById('pm-tolerance')?.value || '1')) || 0;
+  const maxCombo  = parseInt(document.getElementById('pm-max-combo')?.value || '3', 10);
+  const percentages = pmParsePercentages();
+
+  if (!currency) { showToast('Pilih mata uang terlebih dahulu.', 'error'); return; }
+  if (!target || target <= 0) { showToast('Masukkan nilai yang dibayarkan.', 'error'); return; }
+  if (!percentages.length) { showToast('Pilih atau isi minimal 1 persentase DP.', 'error'); return; }
+
+  let pool = pmGetCandidatePool(basis).filter(p => p.currency === currency);
+  if (brand) pool = pool.filter(p => p.brand === brand);
+
+  const resultsEl = document.getElementById('pm-results');
+  if (!pool.length) {
+    resultsEl.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-alert-circle"></i> Tidak ada PO dengan data ${basis === 'ci' ? 'Value CI' : 'Value PO'} untuk mata uang ${currency}${brand ? ' & brand ' + brand : ''}.</div>`;
+    return;
+  }
+
+  const candidates = [];
+  pool.forEach(p => {
+    percentages.forEach(pct => {
+      candidates.push({ poNumber: p.poNumber, brand: p.brand, currency: p.currency, percent: pct, baseValue: p.value, amount: p.value * pct / 100 });
+    });
+  });
+
+  resultsEl.innerHTML = `<div style="padding:16px;text-align:center;color:var(--c-text-hint);font-size:13px"><i class="ti ti-loader-2" style="animation:spin .7s linear infinite;margin-right:6px"></i>Mencari kombinasi…</div>`;
+
+  // Let the loading state paint before the (synchronous) search runs
+  setTimeout(() => {
+    const { results, truncated } = pmSubsetSearch(candidates, target, tolerance, maxCombo);
+    pmRenderResults(results, target, tolerance, currency, truncated);
+  }, 30);
+}
+
+function pmRenderResults(results, target, tolerance, currency, truncated) {
+  const el = document.getElementById('pm-results');
+  if (!el) return;
+  const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!results.length) {
+    el.innerHTML = `
+      <div class="dash-alert-empty"><i class="ti ti-alert-circle"></i>
+        Tidak ditemukan kombinasi yang cocok dengan ${currency} ${fmt(target)} (toleransi ±${fmt(tolerance)}).
+        Coba tambah persentase DP, perbesar toleransi, atau naikkan jumlah maks. PO digabung.
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="hint-box hint-box-blue" style="margin-bottom:12px">
+      <i class="ti ti-circle-check"></i>
+      Ditemukan <strong>${results.length}</strong> kombinasi yang cocok dengan <strong>${currency} ${fmt(target)}</strong> (toleransi ±${fmt(tolerance)}).
+      ${truncated ? ' Pencarian dihentikan lebih awal karena kombinasi terlalu banyak — persempit filter brand/mata uang atau kurangi maks. PO digabung untuk hasil lebih fokus.' : ''}
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>#</th><th>Kombinasi PO</th><th class="num">Total Kombinasi</th><th class="num">Selisih</th></tr></thead>
+        <tbody>
+          ${results.map((r, i) => {
+            const total = r.items.reduce((s, x) => s + x.amount, 0);
+            const diffTxt = Math.abs(r.diff) < 0.005 ? `<span class="sel-zero">0.00</span>`
+              : r.diff > 0 ? `<span class="sel-pos">+${fmt(r.diff)}</span>`
+              : `<span class="sel-neg">${fmt(r.diff)}</span>`;
+            const combo = r.items.map(x => `
+              <div style="display:flex;gap:8px;align-items:center;padding:2px 0">
+                <span style="font-family:monospace;font-weight:600;color:var(--c-blue-dark)">${x.poNumber}</span>
+                <span style="color:var(--c-text-hint);font-size:12px">${x.brand}</span>
+                <span class="badge badge-gray" style="font-size:11px">${x.percent}%</span>
+                <span style="font-size:12px;color:var(--c-text-sub)">${fmt(x.amount)}</span>
+              </div>`).join('');
+            return `<tr>
+              <td>${i + 1}</td>
+              <td>${combo}</td>
+              <td class="num"><strong>${fmt(total)}</strong></td>
+              <td class="num">${diffTxt}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function populateVrPoSelect() {
@@ -2751,6 +2955,38 @@ function vrSaveReconciliation() {
   renderVrHistory();
   updateVrKpis();
   showToast('✓ Value Reconciliation berhasil disimpan!', 'success');
+
+  // Lanjutkan ke Payment Proof Matching untuk PO yang sama
+  setTimeout(() => {
+    if (confirm('Rekonsiliasi berhasil disimpan. Lanjut ke Deteksi Payment Proof (cocokkan dengan bukti pembayaran) untuk PO ini?')) {
+      goToPaymentMatchFromVr(record.poNumber, record.currency, record.brand);
+    }
+  }, 400);
+}
+
+// Dipanggil setelah Value Reconciliation disimpan — menyiapkan Payment Proof
+// Matching untuk PO yang baru saja direkonsiliasi (basis Value CI, mata uang
+// & brand ikut PO tsb) lalu scroll ke sana supaya user tinggal isi nominal
+// dari bukti pembayaran.
+function goToPaymentMatchFromVr(poNumber, currency, brand) {
+  const basisEl = document.getElementById('pm-basis');
+  if (basisEl) basisEl.value = 'ci';
+  pmRefreshFilters();
+
+  const currencySel = document.getElementById('pm-currency');
+  if (currencySel && currency && Array.from(currencySel.options).some(o => o.value === currency)) {
+    currencySel.value = currency;
+  }
+  const brandSel = document.getElementById('pm-brand');
+  if (brandSel && brand && Array.from(brandSel.options).some(o => o.value === brand)) {
+    brandSel.value = brand;
+  }
+
+  const card = document.getElementById('vr-payment-match-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(() => document.getElementById('pm-paid-value')?.focus(), 450);
+
+  showToast(`Basis "Value CI" & filter Payment Matching disiapkan untuk ${poNumber}. Masukkan nilai dari bukti pembayaran.`, 'success');
 }
 
 // ── History table ────────────────────────────────────────────
@@ -3536,6 +3772,23 @@ function updateGdriveStatus(connected) {
 // dan tidak dibatasi pola nomor NIE. Satu kata kunci bisa menghasilkan lebih
 // dari 1 file, jadi hasilnya ditampung ke tabel gdrive-results yang sudah
 // ada supaya user bisa pilih mana yang mau di-ZIP.
+// Extracts a Drive folder ID from a pasted folder link, e.g.:
+//   https://drive.google.com/drive/folders/1AbCdEfGhIjKlmnOPQRstuvWXyz?usp=sharing
+//   https://drive.google.com/drive/u/0/folders/1AbCdEfGhIjKlmnOPQRstuvWXyz
+//   https://drive.google.com/open?id=1AbCdEfGhIjKlmnOPQRstuvWXyz
+//   or just the bare folder ID itself (1AbCdEfGhIjKlmnOPQRstuvWXyz)
+// Returns null if the input doesn't look like a link/ID (i.e. it's a plain folder name).
+function extractDriveFolderId(input) {
+  if (!input) return null;
+  const s = input.trim();
+  let m = s.match(/\/folders\/([a-zA-Z0-9_-]{10,})/);
+  if (m) return m[1];
+  m = s.match(/[?&]id=([a-zA-Z0-9_-]{10,})/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(s)) return s; // bare ID, no slashes/spaces
+  return null;
+}
+
 function gdriveManualParseTerms() {
   const raw = document.getElementById('gdrive-manual-input')?.value || '';
   return [...new Set(raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean))];
@@ -3565,6 +3818,40 @@ function renderGdriveManualChips(terms, statusByTerm) {
   }).join('');
 }
 
+// Drive's `'X' in parents` only matches DIRECT children of folder X — it does
+// NOT descend into subfolders. So if the target files actually live inside a
+// subfolder of the folder you typed, the filtered search would find nothing
+// even though an unfiltered search finds them fine. This walks the folder
+// tree (BFS) to collect the target folder's ID plus every nested subfolder
+// ID, so the filter also covers files that are 1+ levels deep.
+async function getFolderIdsRecursive(rootIds, maxDepth = 5, maxFolders = 300) {
+  const all = new Set(rootIds);
+  let frontier = [...rootIds];
+  let depth = 0;
+  while (frontier.length && depth < maxDepth && all.size < maxFolders) {
+    const nextFrontier = [];
+    for (const parentId of frontier) {
+      if (all.size >= maxFolders) break;
+      try {
+        const resp = await gapi.client.drive.files.list({
+          q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id,name)',
+          pageSize: 100,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          corpora: 'allDrives',
+        });
+        (resp.result.files || []).forEach(f => {
+          if (!all.has(f.id) && all.size < maxFolders) { all.add(f.id); nextFrontier.push(f.id); }
+        });
+      } catch (e) { /* ignore unreadable subfolder, keep going */ }
+    }
+    frontier = nextFrontier;
+    depth++;
+  }
+  return [...all];
+}
+
 async function gdriveManualSearchAndZip() {
   if (!gdriveAccessToken) { showToast('Login ke Google Drive dulu.', 'warning'); return; }
 
@@ -3580,18 +3867,36 @@ async function gdriveManualSearchAndZip() {
   renderGdriveResults([]);
   renderGdriveManualChips(terms, null);
 
-  // Resolve folder name -> folder ID(s) once, if a folder filter was given
+  // Resolve folder filter -> folder ID(s) once, if given.
+  // Accepts: a full Drive folder link, a bare folder ID, or just a folder name.
   let folderClause = '';
   if (folderQ) {
-    try {
-      const fr = await gapi.client.drive.files.list({
-        q: `name contains '${folderQ.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-        fields: 'files(id,name)', pageSize: 10,
-      });
-      const folders = fr.result.files || [];
-      if (folders.length) folderClause = ' and (' + folders.map(f => `'${f.id}' in parents`).join(' or ') + ')';
-      else showToast(`Folder "${folderQ}" tidak ditemukan — pencarian dilakukan di semua folder.`, 'warning');
-    } catch (e) { /* ignore, search without folder restriction */ }
+    let rootIds = [];
+    const directId = extractDriveFolderId(folderQ);
+    if (directId) {
+      // Link / ID pasted directly — no need to search by name, just verify it exists
+      try {
+        await gapi.client.drive.files.get({ fileId: directId, fields: 'id,name,mimeType', supportsAllDrives: true });
+        rootIds = [directId];
+      } catch (e) {
+        showToast('Link/ID folder tidak valid atau tidak bisa diakses — pencarian dilakukan di semua folder.', 'warning');
+      }
+    } else {
+      try {
+        const fr = await gapi.client.drive.files.list({
+          q: `name contains '${folderQ.replace(/'/g,"\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id,name)', pageSize: 10,
+          supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'allDrives',
+        });
+        rootIds = (fr.result.files || []).map(f => f.id);
+        if (!rootIds.length) showToast(`Folder "${folderQ}" tidak ditemukan — pencarian dilakukan di semua folder.`, 'warning');
+      } catch (e) { /* ignore, search without folder restriction */ }
+    }
+
+    if (rootIds.length) {
+      const allIds = await getFolderIdsRecursive(rootIds);
+      folderClause = ' and (' + allIds.map(id => `'${id}' in parents`).join(' or ') + ')';
+    }
   }
 
   const allFound = [];
@@ -3606,6 +3911,7 @@ async function gdriveManualSearchAndZip() {
 
       const resp = await gapi.client.drive.files.list({
         q, fields: 'files(id,name,mimeType,webViewLink,modifiedTime)', orderBy: 'modifiedTime desc', pageSize: 20,
+        supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'allDrives',
       });
       const files = (resp.result.files || []).filter(f => !/qr/i.test(f.name));
       files.forEach(f => allFound.push({ ...f, _term: term }));
@@ -3651,6 +3957,9 @@ async function gdriveSearchByNieNumbers(nieNumbers) {
         fields: 'files(id,name,mimeType,webViewLink,modifiedTime)',
         orderBy: 'modifiedTime desc',
         pageSize: 10,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: 'allDrives',
       });
       const files = (resp.result.files || [])
         .filter(f => !/qr/i.test(f.name)); // skip file QR
@@ -4023,6 +4332,9 @@ async function gdriveSearchAndZipNies(nies) {
         fields: 'files(id,name,mimeType,webViewLink,modifiedTime)',
         orderBy: 'modifiedTime desc',
         pageSize: 5,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        corpora: 'allDrives',
       });
       const files = (resp.result.files || []).filter(f => !/qr/i.test(f.name));
       if (files.length) {

@@ -962,6 +962,87 @@
         </div>
       </div>
 
+      <!-- PAYMENT PROOF MATCHING -->
+      <div class="form-card" id="vr-payment-match-card" style="margin-bottom:16px">
+        <div class="form-card-title">
+          <i class="ti ti-receipt"></i>
+          <span>Deteksi Value vs Bukti Pembayaran (Payment Proof Matching)</span>
+        </div>
+        <div class="hint-box hint-box-blue" style="margin-bottom:14px">
+          <i class="ti ti-info-circle"></i>
+          Masukkan nominal yang tertera di bukti pembayaran (transfer/wire). Sistem akan mencari kombinasi PO —
+          <strong>full payment (100%)</strong>, <strong>DP sebagian</strong> (mis. 50%/30%), atau <strong>gabungan beberapa PO sekaligus</strong> —
+          yang totalnya cocok dengan nominal tersebut. Pencarian hanya membandingkan PO dengan mata uang yang sama.
+        </div>
+
+        <div class="form-grid-2" style="gap:16px;margin-bottom:12px">
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-database"></i> Basis Value</label>
+            <select id="pm-basis" onchange="pmRefreshFilters()">
+              <option value="po">Value PO (dari Buat PO)</option>
+              <option value="ci">Value CI (hasil Verifikasi CI / Value Reconciliation)</option>
+            </select>
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-currency-dollar"></i> Mata Uang</label>
+            <select id="pm-currency" onchange="pmRefreshFilters()">
+              <option value="">— Pilih Mata Uang —</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2" style="gap:16px;margin-bottom:4px">
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-tag"></i> Brand (opsional)</label>
+            <select id="pm-brand">
+              <option value="">Semua Brand</option>
+            </select>
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-wallet"></i> Nilai yang Dibayarkan (dari bukti transfer)</label>
+            <input type="text" inputmode="decimal" id="pm-paid-value" placeholder="Contoh: 12500000" />
+          </div>
+        </div>
+        <div id="pm-pool-count" style="font-size:12px;color:var(--c-text-hint);margin:2px 0 14px"></div>
+
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Persentase DP yang Dicek</label>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="100" checked> 100% (Full)</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="50" checked> 50%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="30"> 30%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="70"> 70%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="25"> 25%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="75"> 75%</label>
+            <input type="text" id="pm-custom-pct" placeholder="Custom % (pisah koma, mis. 20,80)"
+              style="width:190px;padding:6px 8px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:12px" />
+          </div>
+        </div>
+
+        <div class="form-grid-2" style="gap:16px;margin-bottom:14px">
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-adjustments"></i> Toleransi Selisih</label>
+            <input type="text" inputmode="decimal" id="pm-tolerance" value="1" placeholder="mis. 1" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-stack-2"></i> Maks. PO Digabung per Kombinasi</label>
+            <select id="pm-max-combo">
+              <option value="1">1 (hanya 1 PO)</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn-primary btn-sm" onclick="pmFindMatches()">
+          <i class="ti ti-search"></i> Cari Kombinasi yang Cocok
+        </button>
+
+        <div id="pm-results" style="margin-top:16px"></div>
+      </div>
+
       <!-- STEP 3: History Rekonsiliasi -->
       <div class="form-card">
         <div class="form-card-title">
@@ -1233,7 +1314,7 @@
             <span id="gdrive-manual-count" style="font-size:12px;color:var(--c-text-hint)"></span>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-            <input type="text" id="gdrive-folder-input" placeholder="Filter folder (opsional)"
+            <input type="text" id="gdrive-folder-input" placeholder="Nama folder atau link folder Drive (opsional)"
               style="flex:1;min-width:160px;padding:8px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px" />
             <select id="gdrive-filetype" style="padding:8px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px">
               <option value="pdf">PDF</option>
