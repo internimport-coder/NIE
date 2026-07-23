@@ -8,6 +8,69 @@ let editingPoNumber     = null;
 let editingShipmentIndex = null;
 let calendarYear        = new Date().getFullYear();
 let calendarMonth       = new Date().getMonth();
+let currentDetailPoNumber = null; // PO currently open in the PO Inquiry Detail panel
+
+// ── Current User (used to attribute "who edited") ──
+const CURRENT_USER_KEY = 'importtrack_current_user';
+
+function getCurrentUser() {
+  return localStorage.getItem(CURRENT_USER_KEY) || '';
+}
+
+function setCurrentUser(name) {
+  const clean = (name || '').trim();
+  if (!clean) return false;
+  localStorage.setItem(CURRENT_USER_KEY, clean);
+  updateUserBadge();
+  return true;
+}
+
+function updateUserBadge() {
+  const name = getCurrentUser() || 'Admin';
+  const nameEl = document.getElementById('sidebar-user-name');
+  if (nameEl) nameEl.textContent = name;
+  const avatarEl = document.getElementById('sidebar-user-avatar');
+  if (avatarEl) {
+    const initials = name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    avatarEl.textContent = initials || 'AD';
+  }
+}
+
+// Called once on load: if no name is saved yet, prompt for one
+// first so all subsequent edit/verify actions are recorded under the right name.
+function ensureCurrentUser() {
+  if (!getCurrentUser()) openUserIdentityModal(true);
+  else updateUserBadge();
+}
+
+function openUserIdentityModal(isFirstTime = false) {
+  const modal = document.getElementById('user-identity-modal');
+  if (!modal) return;
+  const input = document.getElementById('user-identity-input');
+  const title = document.getElementById('user-identity-title');
+  const sub   = document.getElementById('user-identity-sub');
+  if (input) input.value = getCurrentUser() || '';
+  if (title) title.textContent = isFirstTime ? 'Siapa Anda?' : 'Ganti Nama Pengguna';
+  if (sub) sub.textContent = isFirstTime
+    ? 'This name will be recorded in the log every time you edit or verify a PO.'
+    : 'This name will be recorded in the next activity log entries.';
+  modal.style.display = 'flex';
+  setTimeout(() => input && input.focus(), 50);
+}
+
+function closeUserIdentityModal() {
+  const modal = document.getElementById('user-identity-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function saveUserIdentity() {
+  const input = document.getElementById('user-identity-input');
+  const val = input ? input.value.trim() : '';
+  if (!val) { showToast('Nama wajib diisi.', 'error'); return; }
+  setCurrentUser(val);
+  closeUserIdentityModal();
+  showToast(`You are logged in as ${val}.`, 'success');
+}
 
 // ── Helpers ───────────────────────────────────────────────────
 function fmtDate(dateStr) {
@@ -22,7 +85,7 @@ function fmt(n, dec = 2) {
 
 function badge(status) {
   const map = {
-    'belum-pib': ['badge-gray',   'Belum PIB'],
+    'belum-pib': ['badge-gray',   'No PIB Yet'],
     'kurang':    ['badge-red',    'Kurang'],
     'match':     ['badge-green',  'Match'],
     'lebih':     ['badge-orange', 'Lebih'],
@@ -111,11 +174,11 @@ function renderDashboardOverview() {
     const alerts = [];
     if (counts['belum-pib'] > 0) {
       alerts.push({ cls:'alert-warn', icon:'ti-file-alert', tab:'history',
-        html:`<b>${counts['belum-pib']} PO</b> belum memiliki nomor PIB — segera lengkapi dokumen` });
+        html:`<b>${counts['belum-pib']} PO</b> do not have a PIB number yet — please complete the document soon` });
     }
     if (counts.kurang > 0) {
       alerts.push({ cls:'alert-danger', icon:'ti-trending-down', tab:'history',
-        html:`<b>${counts.kurang} PO</b> mengalami shortage — qty warehouse lebih sedikit dari PIB` });
+        html:`<b>${counts.kurang} PO</b> is experiencing a shortage — warehouse qty is less than PIB` });
     }
     if (counts.lebih > 0) {
       alerts.push({ cls:'alert-info', icon:'ti-trending-up', tab:'history',
@@ -126,11 +189,11 @@ function renderDashboardOverview() {
       .filter(s => s.d !== null && s.d >= 0 && s.d <= 3);
     if (soon.length > 0) {
       alerts.push({ cls:'alert-warn', icon:'ti-ship', tab:'shipment',
-        html:`<b>${soon.length} shipment</b> akan tiba di pelabuhan dalam 3 hari ke depan` });
+        html:`<b>${soon.length} shipment</b> will arrive at the port within the next 3 days` });
     }
 
     if (!alerts.length) {
-      alertsEl.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-circle-check"></i> Semua PO dan shipment dalam kondisi baik. Tidak ada yang perlu ditindaklanjuti.</div>`;
+      alertsEl.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-circle-check"></i> All POs and shipments are in good shape. Nothing needs follow-up.</div>`;
     } else {
       alertsEl.innerHTML = alerts.map(a => `
         <div class="dash-alert-item ${a.cls}" onclick="switchTab('${a.tab}')">
@@ -149,7 +212,7 @@ function renderDashboardOverview() {
   // const summaryEl = document.getElementById('dash-po-summary');
   // if (summaryEl) {
   //   const cards = [
-  //     { key:'belum-pib', label:'Belum PIB', color:'var(--c-gray)',   count: counts['belum-pib'] },
+  //     { key:'belum-pib', label:'No PIB Yet', color:'var(--c-gray)',   count: counts['belum-pib'] },
   //     { key:'kurang',    label:'Shortage',  color:'var(--c-red)',    count: counts.kurang },
   //     { key:'match',     label:'Match',     color:'var(--c-green)',  count: counts.match },
   //     { key:'lebih',     label:'Excess',    color:'var(--c-orange)', count: counts.lebih },
@@ -163,7 +226,7 @@ function renderDashboardOverview() {
   //           <span class="po-summary-count" style="color:${c.color}">${c.count}</span>
   //         </div>
   //         <div class="po-summary-bar-track"><div class="po-summary-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
-  //         <div class="po-summary-pct">${pct}% dari total ${total} PO</div>
+  //         <div class="po-summary-pct">${pct}% of total ${total} PO</div>
   //       </div>`;
   //   }).join('')}</div>`;
   // }
@@ -171,20 +234,28 @@ function renderDashboardOverview() {
 
 // ── Tab navigation ─────────────────────────────────────────────
 const PAGE_CONFIG = {
-  home:        { title: 'Dashboard',             sub: 'Ringkasan aktivitas import dan shipment terkini',       navId: 'nav-home'        },
-  shipment:    { title: 'Upcoming Shipment',     sub: 'Daftar dan jadwal shipment yang akan datang',           navId: 'nav-shipment'    },
-  create:      { title: 'Buat Purchase Order',   sub: 'Tambah atau edit data PO, PIB, dan item',               navId: 'nav-po-create'   },
-  history:     { title: 'History PO',            sub: 'Riwayat seluruh Purchase Order yang tersimpan',         navId: 'nav-po-history'  },
-  search:      { title: 'PO Inquiry',            sub: 'Cari dan telusuri status PO secara detail',             navId: 'nav-po-inquiry'  },
-  ci:          { title: 'Verifikasi CI',         sub: 'Pilih PO, upload CI, dan bandingkan qty per SKU',       navId: 'nav-ci'          },
-  'ci-history':{ title: 'History Verifikasi CI', sub: 'Riwayat semua verifikasi CI yang sudah disimpan',       navId: 'nav-ci-history'  },
-  valrecon:    { title: 'Value Reconciliation',    sub: 'Rekonsiliasi nilai PO vs PIB — deteksi selisih dan currency mismatch', navId: 'nav-valrecon' },
-  nie:         { title: 'NIE Center',               sub: 'Auto-matching NIE BPOM untuk pembuatan SKI — upload CI, sistem temukan NIE otomatis', navId: 'nav-nie' },
+  home:        { title: 'Dashboard',             sub: 'Overview of recent import and shipment activity',       navId: 'nav-home'        },
+  shipment:    { title: 'Upcoming Shipment',     sub: 'List and schedule of upcoming shipments',           navId: 'nav-shipment'    },
+  create:      { title: 'Create / Edit PO',      sub: 'Manually create a new PO or edit an existing one',  navId: 'nav-po-create',  groups: ['navgrp-po'] },
+  history:     { title: 'History PO',            sub: 'History of all saved Purchase Orders',         navId: 'nav-po-history', groups: ['navgrp-po','navgrp-po-inquiry'] },
+  search:      { title: 'PO Inquiry',            sub: 'Search and look up PO status in detail',             navId: 'nav-po-inquiry', groups: ['navgrp-po'] },
+  'pib-compare': { title: 'Compare PIB',         sub: 'Detect a PIB PDF and compare its item quantities against a PO', navId: 'nav-pib-compare', groups: ['navgrp-po'] },
+  ci:          { title: 'Verifikasi CI',         sub: 'Select a PO, upload the CI, and compare qty per SKU',       navId: 'nav-ci',         groups: ['navgrp-po'] },
+  'ci-history':{ title: 'History Verifikasi CI', sub: 'History of all saved CI verifications',       navId: 'nav-ci-history', groups: ['navgrp-po','navgrp-ci'] },
+  valrecon:    { title: 'Payment Proof Matching', sub: 'Search and match payment proof against CI/PO data already in the system.', navId: 'nav-valrecon', groups: ['navgrp-po'] },
+  nie:         { title: 'NIE Center',               sub: 'Auto-matching NIE BPOM for SKI creation — upload a CI and the system finds the NIE automatically', navId: 'nav-nie', groups: ['navgrp-skibpom'] },
 };
+
+function toggleNavGroup(groupId, forceOpen) {
+  const el = document.getElementById(groupId);
+  if (!el) return;
+  if (forceOpen) el.classList.add('open');
+  else el.classList.toggle('open');
+}
 
 function switchTab(tab) {
   // Hide all pages
-  ['home-panel','shipment-panel','create-panel','history-panel','search-panel','ci-panel','ci-history-panel','valrecon-panel','nie-panel'].forEach(id => {
+  ['home-panel','shipment-panel','create-panel','history-panel','search-panel','pib-compare-panel','ci-panel','ci-history-panel','valrecon-panel','nie-panel'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -205,6 +276,7 @@ function switchTab(tab) {
     document.getElementById('page-sub').textContent   = cfg.sub;
     const navEl = document.getElementById(cfg.navId);
     if (navEl) navEl.classList.add('active');
+    (cfg.groups || []).forEach(gid => toggleNavGroup(gid, true));
   }
 
   // Per-tab actions
@@ -221,6 +293,8 @@ function switchTab(tab) {
     const rs = document.getElementById('results-section');
     if (es) es.style.display = 'flex';
     if (rs) rs.style.display = 'none';
+  } else if (tab === 'pib-compare') {
+    populatePibComparePoSelect();
   } else if (tab === 'ci-history') {
     renderCiHistory();
   } else if (tab === 'valrecon') {
@@ -343,7 +417,7 @@ function parsePdfHeuristic(pdfText) {
   }
 
   // ── Deteksi semua nomor PO dalam satu PDF ──────────────────────
-  // Cari setiap "Purchase Order Confirmation #..." atau pola PO/SBI dalam teks
+  // Find every "Purchase Order Confirmation #..." or PO/SBI pattern in the text
   const compactNoSpaces = raw.replace(/\s+/g, '');
   const allPoMatches = [...compactNoSpaces.matchAll(/(PO\/SBI\/[0-9]{4}\/[0-9]{5,})/gi)];
   const uniquePoNumbers = [...new Set(allPoMatches.map(m => m[1]))];
@@ -356,14 +430,14 @@ function parsePdfHeuristic(pdfText) {
     out.po_number = uniquePoNumbers[0];
     out.po_numbers = uniquePoNumbers;
   } else {
-    // Fallback: cari dari teks biasa
+    // Fallback: search from plain text
     const m = raw.match(/Purchase\s*Order\s*Confirmation\s*#\s*(PO\/SBI\/[A-Z0-9\-\/\s]+)/i)
            || raw.match(/Our\s*Order[\s\S]{0,80}?Reference[:\s]*([A-Z0-9\-\/\s]+)/i);
     if (m) out.po_number = (m[1] || '').replace(/\s+/g, '').trim();
     if (out.po_number) out.po_numbers = [out.po_number];
   }
 
-  // ── Jika multi-PO: parse setiap PO secara terpisah ─────────────
+  // ── If multi-PO: parse each PO separately ─────────────
   if (out.is_multi_po) {
     // Split teks berdasarkan kemunculan "Purchase Order Confirmation"
     const sections = raw.split(/(?=Purchase Order Confirmation\s*#)/i).filter(Boolean);
@@ -371,7 +445,7 @@ function parsePdfHeuristic(pdfText) {
     let combinedQty = 0;
 
     sections.forEach(section => {
-      // Cari PO number di section ini
+      // Search for a PO number in this section
       const secCompact = section.replace(/\s+/g, '');
       const secPoMatch = secCompact.match(/(PO\/SBI\/[0-9]{4}\/[0-9]{5,})/i);
       if (!secPoMatch) return;
@@ -401,7 +475,7 @@ function parsePdfHeuristic(pdfText) {
     out.total_amount = combinedAmount;
     out.total_qty = combinedQty;
 
-    // Gunakan data PO pertama untuk field single
+    // Use the first PO's data for single fields
     if (out.po_list.length > 0) {
       out.order_date = out.po_list[0].order_date;
       out.schedule_date = out.po_list[0].schedule_date;
@@ -508,7 +582,7 @@ function handlePdfDrop(event) {
   document.getElementById('pdf-drop-zone').classList.remove('dragover');
   const file = event.dataTransfer.files[0];
   if (file && file.type === 'application/pdf') handlePdfUpload(file);
-  else showToast('Hanya file PDF yang didukung.', 'error');
+  else showToast('Only PDF files are supported.', 'error');
 }
 
 async function handlePdfUpload(file) {
@@ -533,7 +607,7 @@ async function handlePdfUpload(file) {
     fillFormFromParsed(parsed, file.name);
   } catch (err) {
     console.error(err);
-    showToast('Gagal membaca PDF. Coba lagi atau isi manual.', 'error');
+    showToast('Failed to read the PDF. Please try again or fill it in manually.', 'error');
     resetPdfUpload();
   }
 }
@@ -558,6 +632,86 @@ function loadCiHistory() {
 }
 function saveCiHistoryAll(list) {
   localStorage.setItem(CI_HISTORY_KEY, JSON.stringify(list));
+}
+
+// ── Edit Log (siapa mengedit apa, kapan) ──────────────────────
+const EDIT_LOG_KEY = 'importtrack_edit_log';
+
+function loadEditLog() {
+  try { return JSON.parse(localStorage.getItem(EDIT_LOG_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveEditLogAll(list) {
+  localStorage.setItem(EDIT_LOG_KEY, JSON.stringify(list));
+}
+
+// Log one entry. Called from every save point: PO/PIB/Qty WH edits,
+// CI verification (qty & value), and Value Reconciliation.
+function logActivity(poNumber, action, detail = '') {
+  if (!poNumber) return;
+  const log = loadEditLog();
+  log.unshift({
+    id: Date.now() + '-' + Math.random().toString(16).slice(2),
+    timestamp: new Date().toISOString(),
+    user: getCurrentUser() || 'Admin',
+    poNumber,
+    action,
+    detail,
+  });
+  saveEditLogAll(log.slice(0, 500)); // batasi 500 entri terbaru
+}
+
+function getEditLogForPo(poNumber) {
+  return loadEditLog()
+    .filter(e => e.poNumber === poNumber)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+function fmtLogTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function editLogRowsHtml(entries) {
+  if (!entries.length) {
+    return `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--c-text-hint)">No edit history yet for this PO.</td></tr>`;
+  }
+  return entries.map(e => `
+    <tr>
+      <td style="white-space:nowrap">${fmtLogTime(e.timestamp)}</td>
+      <td><strong>${e.user}</strong></td>
+      <td>${e.action}</td>
+      <td style="color:var(--c-text-hint)">${e.detail || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// Render log aktivitas inline di panel Detail PO Inquiry
+function renderEditLog(poNumber) {
+  const tbody = document.getElementById('edit-log-tbody');
+  if (!tbody) return;
+  const entries = getEditLogForPo(poNumber);
+  const countEl = document.getElementById('edit-log-count');
+  if (countEl) countEl.textContent = entries.length + ' aktivitas';
+  tbody.innerHTML = editLogRowsHtml(entries);
+}
+
+// Compact activity log modal — can be opened from History PO / search results
+// tanpa perlu membuka detail penuh dulu.
+function openEditLogModal(poNumber) {
+  if (!poNumber) return;
+  const modal = document.getElementById('edit-log-modal');
+  if (!modal) return;
+  const poEl = document.getElementById('edit-log-modal-po');
+  if (poEl) poEl.textContent = poNumber;
+  const tbody = document.getElementById('edit-log-modal-tbody');
+  if (tbody) tbody.innerHTML = editLogRowsHtml(getEditLogForPo(poNumber));
+  modal.style.display = 'flex';
+}
+function closeEditLogModal() {
+  const modal = document.getElementById('edit-log-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 // ── Step 1: Populate PO dropdown ──────────────────────
@@ -668,7 +822,7 @@ function handleCiDrop(event) {
   if (dropZone) dropZone.classList.remove('dragover');
   const file = event.dataTransfer.files[0];
   if (file) handleCiFile(file);
-  else showToast('Tidak ada file yang dipilih.', 'error');
+  else showToast('No file selected.', 'error');
 }
 
 function handleCiFileInput(files) {
@@ -682,7 +836,7 @@ function handleCiFile(file) {
   if (file.size > 10 * 1024 * 1024) { showToast('File terlalu besar. Maks 10MB.', 'error'); return; }
   const allowed = ['application/pdf','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','application/vnd.ms-excel','text/csv'];
   if (!allowed.includes(file.type) && !/\.xlsx$|\.xls$|\.csv$|\.pdf$/i.test(file.name)) {
-    showToast('Hanya file .pdf, .xlsx, .xls, .csv yang didukung.', 'error');
+    showToast('Only .pdf, .xlsx, .xls, .csv files are supported.', 'error');
     return;
   }
 
@@ -866,14 +1020,20 @@ function buildFuzzyMatches(poItems, ciItems) {
   }
 
   // Build score matrix [poIdx][ciIdx]
-  const poList = poItems.map(it => ({
-    poSku : (it.sku  || '').trim(),
-    poName: cleanItemName(it.name || ''),
-    qPO   : Number(it.qtyPO || 0),
-    type  : it.type || detectItemType((it.sku||''), (it.name||'')),
-    size  : it.size || '',
-    orig  : it,
-  }));
+  const poList = poItems.map(it => {
+    const qPO = Number(it.qtyPO || 0);
+    const unitPrice = Number(it.unitPrice || 0);
+    const valuePO = it.valuePO != null && it.valuePO !== '' ? Number(it.valuePO) : qPO * unitPrice;
+    return {
+      poSku : (it.sku  || '').trim(),
+      poName: cleanItemName(it.name || ''),
+      qPO   : qPO,
+      unitPrice, valuePO,
+      type  : it.type || detectItemType((it.sku||''), (it.name||'')),
+      size  : it.size || '',
+      orig  : it,
+    };
+  });
 
   // ── Pass A: greedily assign best unambiguous matches ──
   // Iterate score priority descending: 3xx → 2xx → 1xx
@@ -902,7 +1062,9 @@ function buildFuzzyMatches(poItems, ciItems) {
     if (ciIdx === null || ciIdx === undefined || ciIdx < 0) {
       return {
         sku: po.poSku, name: po.poName, size: po.size, type: po.type, qPO: po.qPO,
-        ciQty: 0, ciAmount: 0, matchedName: '', matchedSku: '', score: 0, via: '', matched: false,
+        unitPrice: po.unitPrice, valuePO: po.valuePO,
+        ciQty: 0, ciAmount: 0, valueCI: null, fromCiFile: false, valueDiff: null,
+        matchedName: '', matchedSku: '', score: 0, via: '', matched: false,
         diff: -po.qPO, ciAgg, bestCiIdx: -1,
       };
     }
@@ -918,9 +1080,14 @@ function buildFuzzyMatches(poItems, ciItems) {
     } else if (ci.qty === po.qPO) via = 'Nama + Qty';
 
     const nameSim = Math.round(tokenSim(po.poName, ci.name) * 100);
+    const hasCiAmount = !!ci.amount;
+    const valueCI = hasCiAmount ? ci.amount : null;
     return {
       sku: po.poSku, name: po.poName, size: po.size, type: po.type, qPO: po.qPO,
-      ciQty: ci.qty, ciAmount: ci.amount || 0, matchedName: ci.name || ci.sku || '—', matchedSku: ci.sku || '',
+      unitPrice: po.unitPrice, valuePO: po.valuePO,
+      ciQty: ci.qty, ciAmount: ci.amount || 0, valueCI, fromCiFile: hasCiAmount,
+      valueDiff: valueCI != null ? (valueCI - po.valuePO) : null,
+      matchedName: ci.name || ci.sku || '—', matchedSku: ci.sku || '',
       score: Math.min(100, nameSim), via, matched: true,
       diff: ci.qty - po.qPO,
       ciAgg, bestCiIdx: ciIdx,
@@ -932,7 +1099,10 @@ function buildFuzzyMatches(poItems, ciItems) {
     if (!usedCiIdx.has(idx)) {
       rows.push({
         sku: '', name: '—', size: '', type: '', qPO: 0,
-        ciQty: ci.qty, ciAmount: ci.amount || 0, matchedName: ci.name || ci.sku || '?', matchedSku: ci.sku || '',
+        unitPrice: 0, valuePO: 0,
+        ciQty: ci.qty, ciAmount: ci.amount || 0, valueCI: ci.amount || 0, fromCiFile: !!ci.amount,
+        valueDiff: ci.amount || 0,
+        matchedName: ci.name || ci.sku || '?', matchedSku: ci.sku || '',
         score: 0, via: '', matched: false, diff: ci.qty,
         extraFromCi: true, ciAgg, bestCiIdx: idx,
       });
@@ -940,6 +1110,58 @@ function buildFuzzyMatches(poItems, ciItems) {
   });
 
   return { rows, ciAgg };
+}
+
+// ── Value status helpers (merged Value Reconciliation) ─
+function ciValueRowStatus(r) {
+  if (r.valueCI == null) return { status: 'pending', label: 'Not filled in' };
+  const d = r.valueDiff;
+  if (Math.abs(d) < 0.005) return { status: 'match', label: 'Match' };
+  if (d < 0) return { status: 'kurang', label: 'Kurang' };
+  return { status: 'lebih', label: 'Lebih' };
+}
+function ciValueStatusBadge(status, label) {
+  const cls = status === 'match' ? 'badge-green' : status === 'kurang' ? 'badge-red' : status === 'lebih' ? 'badge-orange' : 'badge-gray';
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+function ciValueDiffHtml(r) {
+  return r.valueCI == null ? '<span style="color:var(--c-text-hint)">—</span>' :
+    Math.abs(r.valueDiff) < 0.005 ? `<span class="sel-zero">0.00</span>` :
+    r.valueDiff > 0 ? `<span class="sel-pos">+${r.valueDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>` :
+    `<span class="sel-neg">${r.valueDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;
+}
+
+// Called on every keystroke in the inline "Value CI" input — updates state
+// and just the diff/status cells for that row (keeps cursor/focus intact).
+function ciRecalcRowValue(rowIdx) {
+  const input = document.getElementById(`ci-value-ci-${rowIdx}`);
+  const r = currentCiCompareRows && currentCiCompareRows[rowIdx];
+  if (!input || !r) return;
+  const raw = input.value.trim();
+  r.valueCI = raw === '' ? null : parseMoneyNum(raw);
+  r.fromCiFile = false; // manual edit supersedes the auto-read value
+  r.valueDiff = r.valueCI != null ? (r.valueCI - r.valuePO) : null;
+
+  const diffCell = document.getElementById(`ci-value-diff-${rowIdx}`);
+  const statusCell = document.getElementById(`ci-value-status-${rowIdx}`);
+  if (diffCell) diffCell.innerHTML = ciValueDiffHtml(r);
+  if (statusCell) { const { status, label } = ciValueRowStatus(r); statusCell.innerHTML = ciValueStatusBadge(status, label); }
+  ciUpdateValueSummaryOnly();
+}
+
+function ciFormatValueInput(rowIdx) {
+  const input = document.getElementById(`ci-value-ci-${rowIdx}`);
+  const r = currentCiCompareRows && currentCiCompareRows[rowIdx];
+  if (!input || !r) return;
+  input.value = r.valueCI != null ? r.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '';
+}
+
+// Lightweight summary-strip refresh (value boxes only) while typing, without
+// rebuilding the whole comparison table.
+function ciUpdateValueSummaryOnly() {
+  if (!currentCiCompareRows) return;
+  const po = MOCK_PO_DATA.find(p => p.poNumber === currentCiPoNumber);
+  _renderSummaryStripOnly(currentCiCompareRows, po);
 }
 
 // ── Step 3: Build comparison ───────────────────────────
@@ -963,6 +1185,13 @@ function renderCiComparison() {
 /** Render summary strip + tbody. Called on first build and on any override. */
 function _renderCompareRows(rows, po, ciAgg) {
   if (!po) po = MOCK_PO_DATA.find(p => p.poNumber === currentCiPoNumber);
+  _renderSummaryStripOnly(rows, po);
+  _renderCompareTbody(rows, po, ciAgg);
+}
+
+/** Summary strip only (qty + value) — reusable for live recalculation while typing. */
+function _renderSummaryStripOnly(rows, po) {
+  if (!po) po = MOCK_PO_DATA.find(p => p.poNumber === currentCiPoNumber);
 
   // ── Summary strip ──────────────────────────────────────
   const totalQtyPO  = rows.filter(r => !r.extraFromCi).reduce((s, r) => s + r.qPO, 0);
@@ -973,28 +1202,50 @@ function _renderCompareRows(rows, po, ciAgg) {
   const lebihCount  = rows.filter(r => !r.extraFromCi && r.matched && r.diff > 0).length;
   const missCount   = rows.filter(r => !r.extraFromCi && !r.matched).length;
   const lowConfCount= rows.filter(r => !r.extraFromCi && r.matched && r.via === 'Nama Fuzzy' && r.score < 60).length;
-  const totalValueCI = rows.filter(r => !r.extraFromCi).reduce((s, r) => s + (r.ciAmount || 0), 0);
-  const hasValueCi   = totalValueCI > 0;
+
+  // ── Value totals (Value Reconciliation, merged in) ────
+  const totalValuePO = rows.filter(r => !r.extraFromCi).reduce((s, r) => s + (r.valuePO || 0), 0);
+  const filledValueRows = rows.filter(r => !r.extraFromCi && r.valueCI != null);
+  const totalValueCI = rows.reduce((s, r) => s + (r.valueCI || 0), 0);
+  const totalValueDiff = totalValueCI - totalValuePO;
+  const valueFilledCount = filledValueRows.length;
+  const valueMatchCount  = filledValueRows.filter(r => ciValueRowStatus(r).status === 'match').length;
+  const valueKurangCount = filledValueRows.filter(r => ciValueRowStatus(r).status === 'kurang').length;
+  const valueLebihCount  = filledValueRows.filter(r => ciValueRowStatus(r).status === 'lebih').length;
+  const curCode = (po && po.currency) || 'USD';
 
   const strip = document.getElementById('ci-summary-strip');
   if (strip) {
     const diffColor = totalDiff === 0 ? 'var(--c-green)' : totalDiff > 0 ? 'var(--c-orange)' : 'var(--c-red)';
+    const vDiffColor = valueFilledCount === 0 ? 'var(--c-gray)' : Math.abs(totalValueDiff) < 0.005 ? 'var(--c-green)' : totalValueDiff > 0 ? 'var(--c-orange)' : 'var(--c-red)';
     strip.innerHTML = `
       <div class="ci-sum-box ci-sum-po"><div class="ci-sum-val">${totalQtyPO.toLocaleString()}</div><div class="ci-sum-label">Total Qty PO</div></div>
       <div class="ci-sum-box ci-sum-ci"><div class="ci-sum-val">${totalQtyCI.toLocaleString()}</div><div class="ci-sum-label">Total Qty CI</div></div>
       <div class="ci-sum-box" style="border-color:${diffColor};background:${totalDiff===0?'var(--c-green-bg)':totalDiff>0?'var(--c-orange-bg)':'var(--c-red-bg)'}">
         <div class="ci-sum-val" style="color:${diffColor}">${totalDiff>=0?'+':''}${totalDiff.toLocaleString()}</div>
-        <div class="ci-sum-label">Selisih</div>
+        <div class="ci-sum-label">Selisih Qty</div>
       </div>
       <div class="ci-sum-box ci-sum-match"><div class="ci-sum-val" style="color:var(--c-green)">${matchCount}</div><div class="ci-sum-label">Match</div></div>
       <div class="ci-sum-box ci-sum-kurang"><div class="ci-sum-val" style="color:var(--c-red)">${kurangCount}</div><div class="ci-sum-label">Kurang</div></div>
       <div class="ci-sum-box ci-sum-lebih"><div class="ci-sum-val" style="color:var(--c-orange)">${lebihCount}</div><div class="ci-sum-label">Lebih</div></div>
-      ${missCount ? `<div class="ci-sum-box" style="border-color:var(--c-gray)"><div class="ci-sum-val" style="color:var(--c-gray)">${missCount}</div><div class="ci-sum-label">Tdk Ada di CI</div></div>` : ''}
+      ${missCount ? `<div class="ci-sum-box" style="border-color:var(--c-gray)"><div class="ci-sum-val" style="color:var(--c-gray)">${missCount}</div><div class="ci-sum-label">Not in CI</div></div>` : ''}
       ${lowConfCount ? `<div class="ci-sum-box" style="border-color:var(--c-orange-border);background:var(--c-orange-bg)"><div class="ci-sum-val" style="color:var(--c-orange)">${lowConfCount}</div><div class="ci-sum-label">Conf. Rendah ⚠</div></div>` : ''}
-      ${hasValueCi ? `<div class="ci-sum-box" style="border-color:var(--c-blue-border);background:var(--c-blue-bg)"><div class="ci-sum-val" style="color:var(--c-blue-dark)">${totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="ci-sum-label">Total Value CI (file)</div></div>` : ''}
+      <div class="ci-sum-box" style="border-color:var(--c-blue-border);background:var(--c-blue-bg)"><div class="ci-sum-val" style="color:var(--c-blue-dark)">${curCode} ${totalValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="ci-sum-label">Total Value PO</div></div>
+      <div class="ci-sum-box" style="border-color:var(--c-blue-border);background:var(--c-blue-bg)"><div class="ci-sum-val" style="color:var(--c-blue-dark)">${curCode} ${totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div><div class="ci-sum-label">Total Value CI${valueFilledCount ? '' : ' (not filled in)'}</div></div>
+      <div class="ci-sum-box" style="border-color:${vDiffColor};background:${valueFilledCount===0?'var(--c-surface-2,#f3f4f6)':Math.abs(totalValueDiff)<0.005?'var(--c-green-bg)':totalValueDiff>0?'var(--c-orange-bg)':'var(--c-red-bg)'}">
+        <div class="ci-sum-val" style="color:${vDiffColor}">${valueFilledCount ? (totalValueDiff>=0?'+':'') + totalValueDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</div>
+        <div class="ci-sum-label">Selisih Value</div>
+      </div>
+      <div class="ci-sum-box ci-sum-match"><div class="ci-sum-val" style="color:var(--c-green)">${valueMatchCount}</div><div class="ci-sum-label">Value Match</div></div>
+      <div class="ci-sum-box ci-sum-kurang"><div class="ci-sum-val" style="color:var(--c-red)">${valueKurangCount}</div><div class="ci-sum-label">Value Kurang</div></div>
+      <div class="ci-sum-box ci-sum-lebih"><div class="ci-sum-val" style="color:var(--c-orange)">${valueLebihCount}</div><div class="ci-sum-label">Value Lebih</div></div>
     `;
   }
+}
 
+/** Compare table body (per-SKU rows). Split out from the summary strip so
+ * the strip can be refreshed on its own while the user is typing Value CI. */
+function _renderCompareTbody(rows, po, ciAgg) {
   // ── Compare table body ──────────────────────────────────
   const tbody = document.getElementById('ci-compare-tbody');
   if (!tbody) return;
@@ -1012,7 +1263,7 @@ function _renderCompareRows(rows, po, ciAgg) {
     const statusHtml = r.extraFromCi
       ? `<span class="badge badge-orange">Extra di CI</span>`
       : !r.matched
-      ? `<span class="badge badge-gray">Tidak ada di CI</span>`
+      ? `<span class="badge badge-gray">Not in CI</span>`
       : r.diff === 0 ? badge('match') : r.diff < 0 ? badge('kurang') : badge('lebih');
 
     // Confidence pill
@@ -1038,7 +1289,7 @@ function _renderCompareRows(rows, po, ciAgg) {
       ? `<span style="color:var(--c-orange);font-weight:600">${r.matchedName}</span>`
       : r.matched
       ? `<span class="ci-detected-name">${r.matchedName || '—'}</span>${r.matchedSku && r.matchedSku !== r.sku ? `<br><span style="font-family:monospace;font-size:11px;color:var(--c-text-hint)">${r.matchedSku}</span>` : ''}`
-      : `<span style="color:var(--c-text-hint);font-style:italic">tidak terdeteksi</span>`;
+      : `<span style="color:var(--c-text-hint);font-style:italic">not detected</span>`;
 
     // Override dropdown (only for non-extra rows)
     const overrideHtml = r.extraFromCi ? '' : `
@@ -1051,20 +1302,38 @@ function _renderCompareRows(rows, po, ciAgg) {
       ? `<span title="Confidence rendah — harap periksa manual" style="color:var(--c-orange);margin-left:4px;">⚠</span>`
       : '';
 
+    // Value cells (merged Value Reconciliation) ─────────
+    const fromCiTag = r.fromCiFile
+      ? `<span title="Auto-filled from the Amount/Value column in the CI file — editable" style="color:var(--c-blue-dark);font-size:11px;margin-left:3px;white-space:nowrap"><i class="ti ti-wand"></i></span>`
+      : '';
+    const valuePOHtml = r.extraFromCi
+      ? '<span style="color:var(--c-text-hint)">—</span>'
+      : `${r.valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const valueCIInputHtml = r.extraFromCi
+      ? `${(r.valueCI || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`
+      : `<input type="text" inputmode="decimal" id="ci-value-ci-${rowIdx}"
+            value="${r.valueCI != null ? r.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : ''}"
+            placeholder="0.00" class="vr-ci-input" style="width:110px;text-align:right"
+            oninput="ciRecalcRowValue(${rowIdx})" onblur="ciFormatValueInput(${rowIdx})" />${fromCiTag}`;
+    const { status: vStatus, label: vLabel } = ciValueRowStatus(r);
+
     const tr = document.createElement('tr');
     tr.className = rowClass;
     tr.dataset.rowIdx = rowIdx;
     tr.innerHTML = `
       <td style="font-family:monospace;font-size:12px;">${r.sku || (r.extraFromCi ? r.matchedSku || '—' : '—')}</td>
-      <td>${r.extraFromCi ? '<em style="color:var(--c-text-hint)">— tidak ada di PO —</em>' : `${r.name}${r.size ? ` <span style="font-size:11px;color:var(--c-text-hint)">(${r.size})</span>` : ''}${lowConfWarn}`}</td>
+      <td>${r.extraFromCi ? '<em style="color:var(--c-text-hint)">— not in PO —</em>' : `${r.name}${r.size ? ` <span style="font-size:11px;color:var(--c-text-hint)">(${r.size})</span>` : ''}${lowConfWarn}`}</td>
       <td>${ciNameHtml}</td>
       <td>${confHtml}</td>
       <td>${viaHtml}</td>
       <td class="num"><strong>${r.qPO.toLocaleString()}</strong></td>
       <td class="num">${r.matched ? r.ciQty.toLocaleString() : '<span style="color:var(--c-text-hint)">—</span>'}</td>
-      <td class="num">${r.ciAmount ? r.ciAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>'}</td>
       <td class="num"><span class="${diffCls}">${r.matched || r.extraFromCi ? diffSign : '—'}</span></td>
       <td>${statusHtml}</td>
+      <td class="num">${valuePOHtml}</td>
+      <td class="num">${valueCIInputHtml}</td>
+      <td class="num" id="ci-value-diff-${rowIdx}">${ciValueDiffHtml(r)}</td>
+      <td id="ci-value-status-${rowIdx}">${ciValueStatusBadge(vStatus, vLabel)}</td>
       <td>${overrideHtml}</td>
     `;
     tbody.appendChild(tr);
@@ -1090,13 +1359,13 @@ function openCiOverride(rowIdx) {
   const overrideTr = document.createElement('tr');
   overrideTr.className = 'ci-override-panel';
   overrideTr.innerHTML = `
-    <td colspan="11" style="padding:10px 16px; background:var(--c-blue-bg); border-top:2px solid var(--c-blue);">
+    <td colspan="14" style="padding:10px 16px; background:var(--c-blue-bg); border-top:2px solid var(--c-blue);">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <span style="font-size:13px;font-weight:600;color:var(--c-blue-dark);">
-          <i class="ti ti-wand"></i> Override mapping untuk: <strong>${r.name}</strong>
+          <i class="ti ti-wand"></i> Override mapping for: <strong>${r.name}</strong>
         </span>
         <select id="ci-override-select-${rowIdx}" style="flex:1;min-width:240px;font-size:13px;padding:5px 8px;border:1.5px solid var(--c-blue-border);border-radius:var(--radius-sm);">
-          <option value="">— Tidak ada di CI (kosongkan) —</option>
+          <option value="">— Not in CI (kosongkan) —</option>
           ${ciAgg.map((ci, i) => `<option value="${i}" ${r.bestCiIdx === i ? 'selected' : ''}>${ci.name || ci.sku || '?'} ${ci.sku ? '['+ci.sku+']' : ''} (Qty: ${ci.qty.toLocaleString()})</option>`).join('')}
         </select>
         <button class="btn-primary btn-sm" onclick="applyCiOverride(${rowIdx})">
@@ -1128,11 +1397,15 @@ function applyCiOverride(rowIdx) {
     r.via         = 'Manual';
     r.matched     = true;
     r.bestCiIdx   = ciIdx;
+    r.fromCiFile  = !!ci.amount;
+    r.valueCI     = ci.amount || null;
   } else {
     r.ciQty = 0; r.ciAmount = 0; r.matchedName = ''; r.matchedSku = '';
     r.score = 0; r.via = ''; r.matched = false; r.bestCiIdx = -1;
+    r.fromCiFile = false; r.valueCI = null;
   }
   r.diff = r.ciQty - r.qPO;
+  r.valueDiff = r.valueCI != null ? (r.valueCI - r.valuePO) : null;
 
   // Close override panel & re-render
   document.querySelectorAll('.ci-override-panel').forEach(el => el.remove());
@@ -1158,9 +1431,11 @@ function renderCiRawTable(parsed) {
 // ── Save verification to localStorage ─────────────────
 function saveCiVerification() {
   if (!currentCiCompareRows || !currentCiPoNumber) {
-    showToast('Tidak ada data untuk disimpan.', 'error'); return;
+    showToast('No data to save.', 'error'); return;
   }
   const po = MOCK_PO_DATA.find(p => p.poNumber === currentCiPoNumber);
+
+  // ── Quantity reconciliation ──────────────────────────
   const totalQtyPO = currentCiCompareRows.filter(r => !r.extraFromCi).reduce((s, r) => s + r.qPO, 0);
   const totalQtyCI = currentCiCompareRows.filter(r => !r.extraFromCi).reduce((s, r) => s + r.ciQty, 0);
   const diff = totalQtyCI - totalQtyPO;
@@ -1168,28 +1443,53 @@ function saveCiVerification() {
   const hasLebih  = currentCiCompareRows.some(r => !r.extraFromCi && r.diff > 0);
   const result = diff === 0 ? 'match' : hasKurang && hasLebih ? 'mixed' : hasKurang ? 'kurang' : 'lebih';
 
+  // ── Value reconciliation (merged in — no separate step needed) ──
+  const totalValuePO = currentCiCompareRows.filter(r => !r.extraFromCi).reduce((s, r) => s + (r.valuePO || 0), 0);
+  const totalValueCI = currentCiCompareRows.reduce((s, r) => s + (r.valueCI || 0), 0);
+  const valueDiff = totalValueCI - totalValuePO;
+  const valueStatuses = currentCiCompareRows.filter(r => !r.extraFromCi).map(r => ciValueRowStatus(r).status).filter(s => s !== 'pending');
+  const hasValueUnfilled = currentCiCompareRows.some(r => !r.extraFromCi && r.valueCI == null);
+  const hasValueKurang = valueStatuses.includes('kurang');
+  const hasValueLebih  = valueStatuses.includes('lebih');
+  const valueResult = hasValueUnfilled && !valueStatuses.length ? 'pending'
+    : hasValueKurang && hasValueLebih ? 'mixed' : hasValueKurang ? 'kurang' : hasValueLebih ? 'lebih' : 'match';
+
   const record = {
     id:          Date.now(),
     verifiedAt:  new Date().toISOString(),
     poNumber:    currentCiPoNumber,
     brand:       po ? (po.supplierLabel || po.supplier) : '—',
+    currency:    po ? (po.currency || 'USD') : 'USD',
     fileName:    currentCiFileName || '—',
     totalQtyPO,
     totalQtyCI,
     diff,
     result,
+    totalValuePO,
+    totalValueCI,
+    valueDiff,
+    valueResult,
     rows:        currentCiCompareRows,
   };
 
   const history = loadCiHistory();
   history.unshift(record);
   saveCiHistoryAll(history);
-  showToast('✓ Verifikasi CI berhasil disimpan!', 'success');
+  logActivity(currentCiPoNumber, 'Verifikasi CI (Qty & Value)',
+    `Qty PO ${totalQtyPO.toLocaleString()} vs CI ${totalQtyCI.toLocaleString()} (${result}); ` +
+    `Value PO ${fmt(totalValuePO)} vs CI ${fmt(totalValueCI)} (${valueResult})`);
+  showToast('✓ Verifikasi CI (Qty & Value) berhasil disimpan!', 'success');
 
-  // Offer to continue to Value Reconciliation for the same PO
+  if (hasValueUnfilled) {
+    showToast('Note: some items still have no Value CI filled in.', 'warning');
+  }
+
+  // Offer to continue straight to Payment Proof Matching for the same PO —
+  // Value Reconciliation is now part of this step, so there's no separate hop.
   setTimeout(() => {
-    if (confirm('Verifikasi qty disimpan. Lanjut ke Value Reconciliation (Value PO vs Value CI) untuk PO ini?')) {
-      goToValueRecon(currentCiPoNumber);
+    if (confirm('Continue to Payment Proof Detection (match against payment proof) for this PO?')) {
+      switchTab('valrecon');
+      goToPaymentMatchFromVr(currentCiPoNumber, record.currency, record.brand);
     }
   }, 400);
 }
@@ -1231,16 +1531,28 @@ function renderCiHistory() {
   tbody.innerHTML = '';
 
   if (!history.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--c-text-hint)">Belum ada riwayat verifikasi CI.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:40px;color:var(--c-text-hint)">No CI verification history yet.</td></tr>`;
     return;
   }
+
+  const resultBadgeHtml = (result) => result === 'match' ? badge('match') : result === 'kurang' ? badge('kurang') : result === 'lebih' ? badge('lebih') : result === 'pending' ? '<span class="badge badge-gray">Not filled in</span>' : `<span class="badge badge-orange">Mixed</span>`;
 
   history.forEach(rec => {
     const date = new Date(rec.verifiedAt).toLocaleString('id-ID', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     const diff = rec.diff;
     const diffSign = diff >= 0 ? `+${diff.toLocaleString()}` : diff.toLocaleString();
     const diffCls = diff === 0 ? 'sel-zero' : diff > 0 ? 'sel-pos' : 'sel-neg';
-    const resultBadge = rec.result === 'match' ? badge('match') : rec.result === 'kurang' ? badge('kurang') : rec.result === 'lebih' ? badge('lebih') : `<span class="badge badge-orange">Mixed</span>`;
+    const resultBadge = resultBadgeHtml(rec.result);
+
+    const hasValue = rec.totalValuePO != null;
+    const vDiff = rec.valueDiff || 0;
+    const vDiffCls = Math.abs(vDiff) < 0.005 ? 'sel-zero' : vDiff > 0 ? 'sel-pos' : 'sel-neg';
+    const vDiffSign = vDiff >= 0 ? `+${vDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}` : vDiff.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    const valuePOCell = hasValue ? rec.totalValuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>';
+    const valueCICell = hasValue ? rec.totalValueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>';
+    const valueDiffCell = hasValue ? `<span class="${vDiffCls}">${vDiffSign}</span>` : '<span style="color:var(--c-text-hint)">—</span>';
+    const valueResultBadge = hasValue ? resultBadgeHtml(rec.valueResult) : '<span style="color:var(--c-text-hint)">—</span>';
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-size:12px;color:var(--c-text-sub)">${date}</td>
@@ -1251,6 +1563,10 @@ function renderCiHistory() {
       <td class="num">${rec.totalQtyCI.toLocaleString()}</td>
       <td class="num"><span class="${diffCls}">${diffSign}</span></td>
       <td>${resultBadge}</td>
+      <td class="num">${valuePOCell}</td>
+      <td class="num">${valueCICell}</td>
+      <td class="num">${valueDiffCell}</td>
+      <td>${valueResultBadge}</td>
       <td style="display:flex;gap:6px;">
         <button class="btn-detail" onclick="showCiHistoryDetail(${rec.id})"><i class="ti ti-eye"></i> Detail</button>
         <button class="btn-detail btn-detail-danger" onclick="deleteCiHistory(${rec.id})"><i class="ti ti-trash"></i></button>
@@ -1276,8 +1592,12 @@ function showCiHistoryDetail(id) {
     const statusHtml = r.extraFromCi
       ? `<span class="badge badge-orange">Extra di CI</span>`
       : !r.matched
-      ? `<span class="badge badge-gray">Tidak ada di CI</span>`
+      ? `<span class="badge badge-gray">Not in CI</span>`
       : r.diff === 0 ? badge('match') : r.diff < 0 ? badge('kurang') : badge('lebih');
+
+    const { status: vStatus, label: vLabel } = ciValueRowStatus(r);
+    const valuePOCell = !r.extraFromCi && r.valuePO != null ? r.valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>';
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-family:monospace;font-size:12px;">${r.sku || '—'}</td>
@@ -1287,6 +1607,10 @@ function showCiHistoryDetail(id) {
       <td class="num">${r.ciQty > 0 ? r.ciQty.toLocaleString() : '—'}</td>
       <td class="num"><span class="${diffCls}">${diffSign}</span></td>
       <td>${statusHtml}</td>
+      <td class="num">${valuePOCell}</td>
+      <td class="num">${r.valueCI != null ? r.valueCI.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '<span style="color:var(--c-text-hint)">—</span>'}</td>
+      <td class="num">${ciValueDiffHtml(r)}</td>
+      <td>${ciValueStatusBadge(vStatus, vLabel)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -1296,7 +1620,7 @@ function showCiHistoryDetail(id) {
 }
 
 function deleteCiHistory(id) {
-  if (!confirm('Hapus record verifikasi ini?')) return;
+  if (!confirm('Delete this verification record?')) return;
   const history = loadCiHistory().filter(r => r.id !== id);
   saveCiHistoryAll(history);
   renderCiHistory();
@@ -1305,7 +1629,7 @@ function deleteCiHistory(id) {
 }
 
 function clearAllCiHistory() {
-  if (!confirm('Hapus SEMUA riwayat verifikasi CI? Tindakan ini tidak dapat dibatalkan.')) return;
+  if (!confirm('Delete ALL CI verification history? This action cannot be undone.')) return;
   saveCiHistoryAll([]);
   renderCiHistory();
   showToast('Semua riwayat dihapus.', 'success');
@@ -1411,6 +1735,361 @@ function parseNumberString(value) {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════
+// PIB PDF PARSER (BC 2.0 form) — extracts item name + qty
+// ═══════════════════════════════════════════════════════
+// The PIB PDF text layer lists all "Uraian : <name>" item
+// descriptions in item order first, then — later in the same
+// stream — all the qty/value blocks in the same item order
+// (a quirk of how this customs form's PDF is generated). We
+// pull both lists by order of appearance and zip them together
+// rather than trying to parse a visual row, which is unreliable
+// for this multi-column layout.
+function parsePibPdfText(text) {
+  const flat = String(text || '').replace(/\s+/g, ' ');
+
+  // Item names, in order
+  const names = [...flat.matchAll(/Uraian\s*:\s*(.+?)\s*Merk\s*:/g)].map(m => m[1].trim());
+
+  // Qty per item — the number immediately before a unit token like "PIECE (PCE)"
+  const qtys = [...flat.matchAll(/([\d.,]+)\s*PIECE\s*\(PCE\)/g)].map(m => parseFloat(m[1].replace(/,/g, '')));
+
+  // Customs value (Nilai Pabean) per item — appears right after the qty/unit pair
+  const values = [...flat.matchAll(/PIECE\s*\(PCE\)\s*-\s*([\d.,]+)/g)].map(m => parseFloat(m[1].replace(/,/g, '')));
+
+  // HS code per item (best-effort — may not align 1:1 on every PDF)
+  const hsCodes = [...flat.matchAll(/Pos Tarif\s*:\s*(\d+)\s*Kode Brg/g)].map(m => m[1]);
+
+  const count = Math.max(names.length, qtys.length);
+  const items = [];
+  for (let i = 0; i < count; i++) {
+    items.push({
+      name: names[i] || `(item ${i + 1})`,
+      qty: qtys[i] != null ? qtys[i] : 0,
+      valuePabean: values[i] != null ? values[i] : null,
+      hsCode: hsCodes[i] || '',
+    });
+  }
+
+  // Header info (best-effort — these fields sit close to their labels in the
+  // text stream and tested reliably; Invoice No/Date are scattered across
+  // unrelated columns in this form and are deliberately left for manual entry)
+  const regNo   = flat.match(/Nomor dan Tanggal Pendaftaran\s*(\d+)\s*([\d]{2}-[\d]{2}-[\d]{4})/);
+  const officeCode = flat.match(/\bBC\s*2\.0\s*(\d{6})\b/);
+  const submission  = flat.match(/Nomor Pengajuan\s*:?\s*(\d{10,})/);
+  const office = flat.match(/Kantor Pabean\s*:?\s*([A-Z0-9 .]+?)\s*Nomor Pengajuan/);
+
+  return {
+    items,
+    pibNumber:   regNo ? `${officeCode ? officeCode[1] + '/' : ''}${regNo[1]}` : '',
+    pibDate:     regNo ? regNo[2] : '',
+    submissionNo: submission ? submission[1] : '',
+    customsOffice: office ? office[1].trim() : '',
+  };
+}
+
+// ── Compare PIB — state ─────────────────────────────────
+let currentPibPoNumber = null;
+let currentPibParsed   = null;   // { items, pibNumber, pibDate, ... } from parsePibPdfText
+let currentPibCompareRows = null;
+let currentPibFileName = '';
+
+function populatePibComparePoSelect() {
+  const select = document.getElementById('pib-cmp-po-select');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">— Select PO Number —</option>';
+  getAllPoData().forEach(po => {
+    const option = document.createElement('option');
+    option.value = po.poNumber;
+    option.textContent = `${po.poNumber} — ${po.supplierLabel || po.supplier}`;
+    select.appendChild(option);
+  });
+  if (current) select.value = current;
+}
+
+function filterPibComparePoList() {
+  const query = document.getElementById('pib-cmp-po-search')?.value.trim().toLowerCase() || '';
+  const select = document.getElementById('pib-cmp-po-select');
+  if (!select) return;
+  select.innerHTML = '<option value="">— Select PO Number —</option>';
+  getAllPoData().filter(po => {
+    const target = `${po.poNumber} ${po.supplierLabel || po.supplier}`.toLowerCase();
+    return !query || target.includes(query);
+  }).forEach(po => {
+    const option = document.createElement('option');
+    option.value = po.poNumber;
+    option.textContent = `${po.poNumber} — ${po.supplierLabel || po.supplier}`;
+    select.appendChild(option);
+  });
+  if (currentPibPoNumber) select.value = currentPibPoNumber;
+}
+
+function selectPibComparePo(poNumber) {
+  currentPibPoNumber = poNumber || null;
+  renderPibComparePoDetail();
+  const step2 = document.getElementById('pib-cmp-step2-card');
+  if (step2) {
+    step2.style.opacity = poNumber ? '1' : '.5';
+    step2.style.pointerEvents = poNumber ? '' : 'none';
+  }
+  if (currentPibParsed) renderPibComparison();
+}
+
+// Entry point used by the "Compare PIB" button on History PO / PO Inquiry
+function goToComparePib(poNumber) {
+  switchTab('pib-compare');
+  populatePibComparePoSelect();
+  const select = document.getElementById('pib-cmp-po-select');
+  if (select) select.value = poNumber;
+  selectPibComparePo(poNumber);
+}
+
+function renderPibComparePoDetail() {
+  const detail = document.getElementById('pib-cmp-po-detail');
+  if (!detail) return;
+  if (!currentPibPoNumber) { detail.style.display = 'none'; return; }
+  const po = MOCK_PO_DATA.find(p => p.poNumber === currentPibPoNumber);
+  if (!po) { detail.style.display = 'none'; return; }
+
+  detail.style.display = 'block';
+  const bar = document.getElementById('pib-cmp-po-info-bar');
+  if (bar) {
+    bar.innerHTML = `
+      <div><span class="ci-info-label">Brand</span><span class="ci-info-val">${po.supplierLabel || po.supplier || '—'}</span></div>
+      <div><span class="ci-info-label">PO Date</span><span class="ci-info-val">${fmtDate(po.poDate)}</span></div>
+      <div><span class="ci-info-label">Currency</span><span class="ci-info-val">${po.currency || 'USD'}</span></div>
+      <div><span class="ci-info-label">Existing PIB No.</span><span class="ci-info-val">${po.pibNumber || '—'}</span></div>
+      <div><span class="ci-info-label">Status</span><span class="ci-info-val">${badge(po.status)}</span></div>
+    `;
+  }
+  const tbody = document.getElementById('pib-cmp-po-items-tbody');
+  if (tbody) {
+    tbody.innerHTML = (po.items || []).map(it => `
+      <tr>
+        <td style="font-family:monospace;font-size:12px;">${it.sku || '—'}</td>
+        <td>${cleanItemName(it.name || '') || '—'}${it.size ? ` <span style="font-size:11px;color:var(--c-text-hint)">(${it.size})</span>` : ''}</td>
+        <td>${itemTypeBadge(it.type || detectItemType(it.sku||'', it.name||''))}</td>
+        <td class="num">${(it.qtyPO || it.qtyPIB || 0).toLocaleString()}</td>
+      </tr>`).join('');
+    const cnt = document.getElementById('pib-cmp-po-item-count');
+    if (cnt) cnt.textContent = `${(po.items || []).length} items`;
+  }
+}
+
+function handlePibCompareDrop(event) {
+  event.preventDefault();
+  document.getElementById('pib-cmp-drop-zone').classList.remove('dragover');
+  const file = event.dataTransfer.files[0];
+  if (file) handlePibCompareFile(file);
+}
+
+async function handlePibCompareFile(file) {
+  if (!file) return;
+  if (!/\.pdf$/i.test(file.name)) { showToast('Please upload a PDF file (the PIB / BC 2.0 document).', 'error'); return; }
+  currentPibFileName = file.name;
+
+  const content   = document.getElementById('pib-cmp-drop-content');
+  const loading   = document.getElementById('pib-cmp-loading');
+  const resultBox = document.getElementById('pib-cmp-result-info');
+  if (content) content.style.display = 'none';
+  if (loading) loading.style.display = 'flex';
+  if (resultBox) resultBox.style.display = 'none';
+
+  try {
+    const text = await extractTextFromPdf(file);
+    const parsed = parsePibPdfText(text);
+    if (!parsed.items.length) {
+      showToast('No items could be detected in this PDF. Is it a PIB (BC 2.0) document?', 'error');
+      resetPibCompareUpload();
+      return;
+    }
+    currentPibParsed = parsed;
+    if (loading) loading.style.display = 'none';
+    if (resultBox) {
+      resultBox.style.display = 'flex';
+      document.getElementById('pib-cmp-result-text').textContent =
+        `${file.name} — ${parsed.items.length} items detected${parsed.pibNumber ? ` · PIB No. ${parsed.pibNumber}` : ''}`;
+    }
+    renderPibComparison();
+    showToast(`✓ Detected ${parsed.items.length} items from the PIB PDF.`, 'success');
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to read this PDF. Please check the file and try again.', 'error');
+    resetPibCompareUpload();
+  }
+}
+
+function resetPibCompareUpload() {
+  currentPibParsed = null;
+  currentPibCompareRows = null;
+  currentPibFileName = '';
+  const content   = document.getElementById('pib-cmp-drop-content');
+  const loading   = document.getElementById('pib-cmp-loading');
+  const resultBox = document.getElementById('pib-cmp-result-info');
+  const input     = document.getElementById('pib-cmp-file-input');
+  if (content) content.style.display = 'block';
+  if (loading) loading.style.display = 'none';
+  if (resultBox) resultBox.style.display = 'none';
+  if (input) input.value = '';
+  const card = document.getElementById('pib-cmp-compare-card');
+  if (card) card.style.display = 'none';
+}
+
+// Simple name-only fuzzy matcher (the PIB PDF has no SKU codes, only
+// free-text product descriptions) — same greedy assignment strategy as
+// the CI verification matcher, minus the SKU-scoring tier.
+function buildPibFuzzyMatches(poItems, pibItems) {
+  const usedIdx = new Set();
+  const poList = poItems.map(it => ({
+    sku: (it.sku || '').trim(),
+    name: cleanItemName(it.name || ''),
+    qPO: Number(it.qtyPO || it.qtyPIB || 0),
+    type: it.type || detectItemType(it.sku || '', it.name || ''),
+    size: it.size || '',
+    qWH: Number(it.qtyWarehouse || 0), // Qty WH — sourced from Warehouse data on this PO item
+  }));
+
+  function pairScore(poName, qPO, pibItem) {
+    const sim = tokenSim(poName, pibItem.name);
+    if (sim < 0.3) return -1;
+    if (pibItem.qty === qPO) return 100 + Math.round(sim * 100);
+    return Math.round(sim * 100);
+  }
+
+  const assigned = new Array(poList.length).fill(null);
+  for (let round = 0; round < poList.length; round++) {
+    let bestPo = -1, bestPib = -1, bestSc = -1;
+    poList.forEach((po, pi) => {
+      if (assigned[pi] !== null) return;
+      pibItems.forEach((pibIt, ii) => {
+        if (usedIdx.has(ii)) return;
+        const sc = pairScore(po.name, po.qPO, pibIt);
+        if (sc > bestSc) { bestSc = sc; bestPo = pi; bestPib = ii; }
+      });
+    });
+    if (bestPo === -1 || bestSc < 30) break;
+    assigned[bestPo] = bestPib;
+    usedIdx.add(bestPib);
+  }
+
+  const rows = poList.map((po, pi) => {
+    const idx = assigned[pi];
+    if (idx === null || idx === undefined) {
+      return { sku: po.sku, name: po.name, size: po.size, type: po.type, qPO: po.qPO, qWH: po.qWH,
+        pibQty: 0, matchedName: '', score: 0, matched: false, diff: -po.qPO, valuePabean: null };
+    }
+    const pibIt = pibItems[idx];
+    const sim = Math.round(tokenSim(po.name, pibIt.name) * 100);
+    return {
+      sku: po.sku, name: po.name, size: po.size, type: po.type, qPO: po.qPO, qWH: po.qWH,
+      pibQty: pibIt.qty, matchedName: pibIt.name, score: Math.min(100, sim), matched: true,
+      diff: pibIt.qty - po.qPO, valuePabean: pibIt.valuePabean, hsCode: pibIt.hsCode,
+    };
+  });
+
+  // Extra PIB rows that weren't matched to any PO item
+  pibItems.forEach((pibIt, idx) => {
+    if (!usedIdx.has(idx)) {
+      rows.push({ sku: '', name: '— not in PO —', size: '', type: '', qPO: 0, qWH: 0,
+        pibQty: pibIt.qty, matchedName: pibIt.name, score: 0, matched: false,
+        diff: pibIt.qty, valuePabean: pibIt.valuePabean, hsCode: pibIt.hsCode, extraFromPib: true });
+    }
+  });
+
+  return rows;
+}
+
+function renderPibComparison() {
+  const po = MOCK_PO_DATA.find(p => p.poNumber === currentPibPoNumber);
+  if (!po || !currentPibParsed) return;
+
+  const rows = buildPibFuzzyMatches(po.items || [], currentPibParsed.items);
+  currentPibCompareRows = rows;
+
+  const card = document.getElementById('pib-cmp-compare-card');
+  if (card) card.style.display = 'block';
+
+  // Header info detected from the PDF
+  const headerBox = document.getElementById('pib-cmp-detected-header');
+  if (headerBox) {
+    headerBox.innerHTML = `
+      <div><span class="ci-info-label">PIB Number (detected)</span><span class="ci-info-val">${currentPibParsed.pibNumber || '—'}</span></div>
+      <div><span class="ci-info-label">PIB Date (detected)</span><span class="ci-info-val">${currentPibParsed.pibDate || '—'}</span></div>
+      <div><span class="ci-info-label">Customs Office</span><span class="ci-info-val">${currentPibParsed.customsOffice || '—'}</span></div>
+    `;
+  }
+
+  const totQtyPO  = rows.filter(r => !r.extraFromPib).reduce((s, r) => s + r.qPO, 0);
+  const totQtyPIB = rows.reduce((s, r) => s + (r.pibQty || 0), 0);
+  const totQtyWH  = rows.filter(r => !r.extraFromPib).reduce((s, r) => s + (r.qWH || 0), 0);
+  const diff = totQtyPIB - totQtyPO;
+  const matchCount  = rows.filter(r => !r.extraFromPib && r.matched && r.diff === 0).length;
+  const kurangCount = rows.filter(r => !r.extraFromPib && r.matched && r.diff < 0).length;
+  const lebihCount  = rows.filter(r => !r.extraFromPib && r.matched && r.diff > 0).length;
+  const missCount   = rows.filter(r => !r.extraFromPib && !r.matched).length;
+
+  const strip = document.getElementById('pib-cmp-summary-strip');
+  if (strip) {
+    const diffColor = diff === 0 ? 'var(--c-green)' : diff > 0 ? 'var(--c-orange)' : 'var(--c-red)';
+    strip.innerHTML = `
+      <div class="ci-sum-box ci-sum-po"><div class="ci-sum-val">${totQtyPO.toLocaleString()}</div><div class="ci-sum-label">Total Qty PO</div></div>
+      <div class="ci-sum-box ci-sum-ci"><div class="ci-sum-val">${totQtyPIB.toLocaleString()}</div><div class="ci-sum-label">Total Qty PIB (detected)</div></div>
+      <div class="ci-sum-box"><div class="ci-sum-val">${totQtyWH.toLocaleString()}</div><div class="ci-sum-label">Total Qty WH (Warehouse)</div></div>
+      <div class="ci-sum-box" style="border-color:${diffColor};background:${diff===0?'var(--c-green-bg)':diff>0?'var(--c-orange-bg)':'var(--c-red-bg)'}">
+        <div class="ci-sum-val" style="color:${diffColor}">${diff>=0?'+':''}${diff.toLocaleString()}</div>
+        <div class="ci-sum-label">Difference</div>
+      </div>
+      <div class="ci-sum-box ci-sum-match"><div class="ci-sum-val" style="color:var(--c-green)">${matchCount}</div><div class="ci-sum-label">Match</div></div>
+      <div class="ci-sum-box ci-sum-kurang"><div class="ci-sum-val" style="color:var(--c-red)">${kurangCount}</div><div class="ci-sum-label">Short</div></div>
+      <div class="ci-sum-box ci-sum-lebih"><div class="ci-sum-val" style="color:var(--c-orange)">${lebihCount}</div><div class="ci-sum-label">Over</div></div>
+      ${missCount ? `<div class="ci-sum-box" style="border-color:var(--c-gray)"><div class="ci-sum-val" style="color:var(--c-gray)">${missCount}</div><div class="ci-sum-label">Not Found in PIB</div></div>` : ''}
+    `;
+  }
+
+  const tbody = document.getElementById('pib-cmp-compare-tbody');
+  if (tbody) {
+    tbody.innerHTML = rows.map(r => {
+      const diffCls = r.diff === 0 ? 'sel-zero' : r.diff > 0 ? 'sel-pos' : 'sel-neg';
+      const diffTxt = r.diff === 0 ? '0' : r.diff > 0 ? `+${r.diff.toLocaleString()}` : r.diff.toLocaleString();
+      const statusHtml = r.extraFromPib ? '<span class="badge badge-orange">Extra in PIB</span>'
+        : !r.matched ? '<span class="badge badge-gray">Not Found in PIB</span>'
+        : r.diff === 0 ? badge('match') : r.diff < 0 ? badge('kurang') : badge('lebih');
+      return `
+        <tr>
+          <td style="font-family:monospace;font-size:12px;">${r.sku || '—'}</td>
+          <td>${r.extraFromPib ? '<em style="color:var(--c-text-hint)">— not in PO —</em>' : `${r.name}${r.size ? ` <span style="font-size:11px;color:var(--c-text-hint)">(${r.size})</span>` : ''}`}</td>
+          <td>${r.matchedName ? r.matchedName : '<span style="color:var(--c-text-hint)">—</span>'} ${r.score ? `<span style="font-size:11px;color:var(--c-text-hint)">(${r.score}%)</span>` : ''}</td>
+          <td class="num">${r.extraFromPib ? '—' : r.qPO.toLocaleString()}</td>
+          <td class="num">${r.matched || r.extraFromPib ? r.pibQty.toLocaleString() : '<span style="color:var(--c-text-hint)">—</span>'}</td>
+          <td class="num">${r.extraFromPib ? '—' : (r.qWH || 0).toLocaleString()}</td>
+          <td class="num"><span class="${diffCls}">${r.matched || r.extraFromPib ? diffTxt : '—'}</span></td>
+          <td>${statusHtml}</td>
+        </tr>`;
+    }).join('');
+  }
+}
+
+// Push the detected PIB qty into the PO record itself (updates qtyPIB per
+// item + header pibNumber/pibDate) and logs the change to the PO edit log.
+function applyPibToPo() {
+  const po = MOCK_PO_DATA.find(p => p.poNumber === currentPibPoNumber);
+  if (!po || !currentPibCompareRows) return;
+
+  (po.items || []).forEach(it => {
+    const row = currentPibCompareRows.find(r => !r.extraFromPib && r.sku === (it.sku || '').trim() && r.name === cleanItemName(it.name || ''));
+    if (row && row.matched) it.qtyPIB = row.pibQty;
+  });
+  po.qtyPIB = (po.items || []).reduce((s, it) => s + Number(it.qtyPIB || 0), 0);
+  if (currentPibParsed.pibNumber) po.pibNumber = currentPibParsed.pibNumber;
+  if (currentPibParsed.pibDate)   po.pibDate   = currentPibParsed.pibDate;
+  po.status = computeStatus(po.qtyPIB, po.qtyWarehouse, po.pibNumber);
+
+  logActivity(po.poNumber, 'Compare PIB', `Applied detected PIB quantities from "${currentPibFileName}"`);
+  updateKPI(getAllPoData());
+  showToast('✓ PIB quantities applied to this PO.', 'success');
+}
+
 function parseCiPdfTable(text) {
   const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const keywords = /(Name|Product Name|Description|Nama BPOM|UPC|Barcode|EAN|JAN Code|SKU|Product Code|Reffcode|Item Code|HS Code|Tariff|HTS|Packaging|Package|Pack|Unit|Quantity|Qty|Q'ty|PCS|EA|FOC Quantity|FOC Q'ty|Unit Price|Price\/Unit|Amount|Total|Value)/i;
@@ -1439,7 +2118,7 @@ function parseCiPdfTable(text) {
 
 function fillFormFromParsed(data, fileName) {
   // ── PO Number ──
-  // Untuk multi-PO: isi dengan nomor PO pertama, tapi tampilkan badge peringatan
+  // For multi-PO: fill in the first PO number, but show a warning badge
   setField('pib-po-number', data.po_number);
 
   // ── Order Date ──
@@ -1464,7 +2143,7 @@ function fillFormFromParsed(data, fileName) {
     }
   }
 
-  // ── PO Value — untuk multi-PO ini adalah total gabungan ──
+  // ── PO Value — for multi-PO this is the combined total ──
   if (data.total_amount != null) setField('pib-po-value', data.total_amount);
 
   // ── Supplier match ──
@@ -1504,7 +2183,7 @@ function fillFormFromParsed(data, fileName) {
   const itemCount = data.items ? data.items.length : 0;
 
   if (data.is_multi_po && data.po_numbers && data.po_numbers.length > 1) {
-    // Multi-PO: tampilkan semua nomor PO dan total gabungan
+    // Multi-PO: show all PO numbers and the combined total
     const poListStr = data.po_numbers.join(' + ');
     const totalFmt = data.total_amount ? Number(data.total_amount).toLocaleString() : '?';
     resultText.textContent = `"${fileName}" — MULTI PO: ${poListStr} · ${itemCount} item · ${data.currency || ''} ${totalFmt} (total gabungan)`;
@@ -1529,7 +2208,7 @@ function fillFormFromParsed(data, fileName) {
           Total Gabungan: ${data.currency||''} ${Number(data.total_amount||0).toLocaleString()}
         </div>
         <div style="margin-top:6px;font-size:12px;color:var(--c-text-hint)">
-          ⚠ Field "PO Number" diisi dengan PO pertama. Harap input masing-masing PO secara terpisah atau sesuaikan manual.
+          ⚠ The "PO Number" field was filled with the first PO. Please enter each PO separately or adjust manually.
         </div>`;
       container.appendChild(banner);
     }
@@ -1560,7 +2239,7 @@ function renderPdfPreviewTable(items) {
   div.style.cssText = 'margin-top:14px;overflow-x:auto;';
   div.innerHTML = `
     <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">
-      Preview Item Terbaca dari PDF
+      Preview of Items Detected from PDF
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
@@ -1597,6 +2276,310 @@ function resetPdfUpload() {
   document.getElementById('pdf-result-info').style.display = 'none';
 }
 
+// ════════════════════════════════════════════════════════
+//  CREATE PO (DUMMY) — hidden drawer on History PO.
+//  Reuses the same PDF-detection logic as the PO form, but the
+//  output is a downloadable JSON file (app's PO record shape)
+//  instead of a saved PO — it never touches MOCK_PO_DATA.
+// ════════════════════════════════════════════════════════
+let dummyPoDraft = null; // the generated PO-shaped object, ready to download
+
+function openCreatePoDummyDrawer() {
+  resetDummyPdfUpload();
+  const overlay = document.getElementById('dummy-po-drawer-overlay');
+  if (overlay) overlay.style.display = 'block';
+}
+
+function closeCreatePoDummyDrawer() {
+  const overlay = document.getElementById('dummy-po-drawer-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function handleDummyPdfDrop(event) {
+  event.preventDefault();
+  document.getElementById('dummy-pdf-drop-zone').classList.remove('dragover');
+  const file = event.dataTransfer.files[0];
+  if (file && /\.pdf$/i.test(file.name)) handleDummyPdfUpload(file);
+  else showToast('Only PDF files are supported.', 'error');
+}
+
+async function handleDummyPdfUpload(file) {
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { showToast('File too large. Max 10MB.', 'error'); return; }
+
+  const dropContent = document.getElementById('dummy-pdf-drop-content');
+  const loading      = document.getElementById('dummy-pdf-loading');
+  if (dropContent) dropContent.style.display = 'none';
+  if (loading) loading.style.display = 'block';
+
+  try {
+    const pdfText = await extractTextFromPdf(file);
+    let parsed = null;
+    try {
+      parsed = await parsePdfWithAI(pdfText);
+    } catch (aiErr) {
+      console.warn('AI parse failed, falling back to heuristic parser', aiErr);
+      parsed = parsePdfHeuristic(pdfText);
+      showToast('AI parser failed — using local parser instead.', 'warning');
+    }
+    dummyPoDraft = buildDummyPoJson(parsed, file.name);
+    renderDummyPoPreview(dummyPoDraft, file.name);
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to read the PDF. Please try again.', 'error');
+    resetDummyPdfUpload();
+  }
+}
+
+// Maps the raw parsed PO PDF data into the exact record shape used by
+// History PO / MOCK_PO_DATA, so the resulting JSON can be imported as-is.
+function buildDummyPoJson(data, fileName) {
+  const items = (data.items || []).map(it => ({
+    sku:          it.sku  || '',
+    name:         it.name || '',
+    size:         it.size || '',
+    type:         detectItemType(it.sku || '', it.name || ''),
+    qtyPO:        Number(it.qty) || 0,
+    qtyPIB:       0,
+    qtyWarehouse: 0,
+    unitPrice:    Number(it.unit_price) || 0,
+    discountPct:  Number(it.discount_pct) || 0,
+    netPrice:     it.net_price != null ? Number(it.net_price) : undefined,
+  }));
+
+  return {
+    poNumber:      data.po_number || '',
+    poDate:        data.order_date || '',
+    supplier:      data.supplier || '',
+    supplierLabel: data.supplier || '',
+    revCode:       data.rev_code || '-',
+    pibNumber:     '',
+    pibDate:       '',
+    currency:      data.currency || 'USD',
+    status:        'belum-pib',
+    qtyPIB:        0,
+    qtyWarehouse:  0,
+    poValue:       Number(data.total_amount) || 0,
+    paidAmount:    0,
+    items,
+    _sourcePdf:    fileName,
+  };
+}
+
+function renderDummyPoPreview(po, fileName) {
+  const loading   = document.getElementById('dummy-pdf-loading');
+  const resultBox = document.getElementById('dummy-pdf-result-info');
+  const resultText = document.getElementById('dummy-pdf-result-text');
+  if (loading) loading.style.display = 'none';
+  if (resultBox) resultBox.style.display = 'flex';
+  if (resultText) resultText.textContent = `${fileName} — PO ${po.poNumber || '?'} · ${po.items.length} item terdeteksi`;
+
+  const wrap = document.getElementById('dummy-po-preview-wrap');
+  const tbody = document.getElementById('dummy-po-preview-tbody');
+  const count = document.getElementById('dummy-po-preview-count');
+  const poNumberInput = document.getElementById('dummy-po-number-input');
+  if (wrap) wrap.style.display = 'block';
+  if (count) count.textContent = `${po.items.length} items`;
+  // PO Number is editable — pre-fill with whatever was detected (may be
+  // empty if the PDF layout didn't match), so the buttons never stay
+  // frozen: the user can just type/fix the PO Number here to unlock them.
+  if (poNumberInput) poNumberInput.value = po.poNumber || '';
+  if (tbody) {
+    tbody.innerHTML = po.items.map(it => `
+      <tr>
+        <td style="font-family:monospace;font-size:12px;">${it.sku || '—'}</td>
+        <td class="num">${(it.qtyPO || 0).toLocaleString()}</td>
+        <td class="num">${(it.qtyPIB || 0).toLocaleString()}</td>
+        <td class="num">${(it.qtyWarehouse || 0).toLocaleString()}</td>
+      </tr>`).join('');
+  }
+
+  updateDummyPoButtonsState();
+}
+
+// Keeps dummyPoDraft.poNumber synced with the editable field, and toggles
+// the Download / Import buttons on/off live as the user types.
+function onDummyPoNumberInput(value) {
+  if (dummyPoDraft) dummyPoDraft.poNumber = value.trim();
+  updateDummyPoButtonsState();
+}
+
+function updateDummyPoButtonsState() {
+  const hasData = !!(dummyPoDraft && dummyPoDraft.items && dummyPoDraft.items.length && dummyPoDraft.poNumber);
+  const dlBtn  = document.getElementById('dummy-po-download-btn');
+  const impBtn = document.getElementById('dummy-po-import-btn');
+  if (dlBtn)  dlBtn.disabled  = !hasData;
+  if (impBtn) impBtn.disabled = !hasData;
+}
+
+function downloadDummyPoJson() {
+  if (!dummyPoDraft || !dummyPoDraft.poNumber) {
+    showToast('PO Number is required — fill it in above first.', 'error');
+    return;
+  }
+  const blob = new Blob([JSON.stringify(dummyPoDraft, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `${dummyPoDraft.poNumber.replace(/[\/\\]/g, '-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('✓ JSON file downloaded.', 'success');
+}
+
+// One-click path: import the currently-previewed dummy PO straight into
+// History PO (same de-duplication logic as Import JSON), no download step.
+function importDummyPoToHistory() {
+  if (!dummyPoDraft || !dummyPoDraft.poNumber) {
+    showToast('PO Number is required — fill it in above first.', 'error');
+    return;
+  }
+  importPoRecords([dummyPoDraft]);
+  closeCreatePoDummyDrawer();
+}
+
+function resetDummyPdfUpload() {
+  dummyPoDraft = null;
+  const input       = document.getElementById('dummy-pdf-file-input');
+  const dropContent = document.getElementById('dummy-pdf-drop-content');
+  const loading     = document.getElementById('dummy-pdf-loading');
+  const resultBox   = document.getElementById('dummy-pdf-result-info');
+  const wrap        = document.getElementById('dummy-po-preview-wrap');
+  const poNumberInput = document.getElementById('dummy-po-number-input');
+  if (input) input.value = '';
+  if (dropContent) dropContent.style.display = 'block';
+  if (loading) loading.style.display = 'none';
+  if (resultBox) resultBox.style.display = 'none';
+  if (wrap) wrap.style.display = 'none';
+  if (poNumberInput) poNumberInput.value = '';
+  updateDummyPoButtonsState();
+}
+
+// ════════════════════════════════════════════════════════
+//  EXPORT JSON — History PO
+//  Downloads the PO(s) currently visible in History PO (respecting
+//  the search filter) as a JSON array, in the exact shape MOCK_PO_DATA
+//  / Import JSON expects — so the file can be edited and re-imported
+//  to keep updating the same PO records over time.
+// ════════════════════════════════════════════════════════
+function exportHistoryPoJson() {
+  const q = document.getElementById('history-search')?.value.trim().toLowerCase() || '';
+  const data = getAllPoData().filter(po =>
+    !q || po.poNumber.toLowerCase().includes(q) ||
+    (po.supplierLabel || po.supplier || '').toLowerCase().includes(q)
+  );
+  if (!data.length) {
+    showToast('No PO to export.', 'error');
+    return;
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.download = q ? `history-po-export-${stamp}.json` : `history-po-export-all-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast(`✓ ${data.length} PO exported. Edit the file and use "Import JSON" to bring updates back in.`, 'success');
+}
+
+// ════════════════════════════════════════════════════════
+//  IMPORT JSON — History PO
+//  Appends one or more Create PO (Dummy) JSON files into
+//  MOCK_PO_DATA. Never replaces the existing dataset; PO
+//  numbers that already exist are flagged as duplicates and
+//  only overwritten if the user explicitly confirms.
+// ════════════════════════════════════════════════════════
+function handleImportJsonFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  Promise.all(files.map(file => file.text().then(
+    text => ({ file: file.name, ok: true, data: JSON.parse(text) }),
+    () => ({ file: file.name, ok: true, data: null })
+  ).catch(() => ({ file: file.name, ok: false, data: null }))))
+  .then(results => {
+    const records = [];
+    const failedFiles = [];
+    results.forEach(r => {
+      if (!r.ok || r.data == null) { failedFiles.push(r.file); return; }
+      const arr = Array.isArray(r.data) ? r.data : [r.data];
+      arr.forEach(rec => { if (rec && rec.poNumber) records.push(rec); });
+    });
+    if (failedFiles.length) {
+      showToast(`Failed to read: ${failedFiles.join(', ')} (invalid JSON).`, 'error');
+    }
+    if (!records.length) {
+      if (!failedFiles.length) showToast('No valid PO data found in the selected file(s).', 'error');
+      return;
+    }
+    importPoRecords(records);
+    const input = document.getElementById('history-import-json-input');
+    if (input) input.value = '';
+  });
+}
+
+// Normalizes an imported record into the exact shape used by MOCK_PO_DATA,
+// so partially-filled dummy JSON (Qty PIB/WH = 0, etc.) still behaves.
+function normalizePoRecord(rec) {
+  return {
+    poNumber:      rec.poNumber,
+    poDate:        rec.poDate || '',
+    supplier:      rec.supplier || rec.supplierLabel || '',
+    supplierLabel: rec.supplierLabel || rec.supplier || '',
+    revCode:       rec.revCode || '-',
+    pibNumber:     rec.pibNumber || '',
+    pibDate:       rec.pibDate || '',
+    currency:      rec.currency || 'USD',
+    qtyPIB:        Number(rec.qtyPIB || 0),
+    qtyWarehouse:  Number(rec.qtyWarehouse || 0),
+    poValue:       Number(rec.poValue || 0),
+    paidAmount:    Number(rec.paidAmount || 0),
+    items:         Array.isArray(rec.items) ? rec.items : [],
+    status:        rec.status || computeStatus(Number(rec.qtyPIB || 0), Number(rec.qtyWarehouse || 0), rec.pibNumber || ''),
+  };
+}
+
+function importPoRecords(records) {
+  const added = [];
+  const duplicates = [];
+
+  records.forEach(rec => {
+    const existing = MOCK_PO_DATA.find(p => p.poNumber === rec.poNumber);
+    if (existing) duplicates.push(rec);
+    else { MOCK_PO_DATA.push(normalizePoRecord(rec)); added.push(rec.poNumber); }
+  });
+
+  if (duplicates.length) {
+    const list = duplicates.map(d => d.poNumber).join(', ');
+    const overwrite = confirm(
+      `${duplicates.length} PO already exist in History PO (${list}).\n\n` +
+      `Click OK to overwrite them with the imported data, or Cancel to keep the existing data as-is (skip these).`
+    );
+    if (overwrite) {
+      duplicates.forEach(rec => {
+        const existing = MOCK_PO_DATA.find(p => p.poNumber === rec.poNumber);
+        Object.assign(existing, normalizePoRecord(rec));
+        logActivity(rec.poNumber, 'Import JSON (Overwrite)', 'PO data overwritten from an imported JSON file.');
+      });
+    }
+  }
+
+  added.forEach(pn => logActivity(pn, 'Import JSON', 'PO added from an imported JSON file.'));
+
+  updateKPI(getAllPoData());
+  renderPibHistory();
+
+  const parts = [];
+  if (added.length) parts.push(`${added.length} PO baru ditambahkan`);
+  if (duplicates.length) parts.push(`${duplicates.length} PO duplikat terdeteksi`);
+  showToast(parts.length ? parts.join(' · ') : 'No new PO to import.', added.length ? 'success' : 'warning');
+}
+
 // ── PO Search ─────────────────────────────────────────────────
 function doSearch() {
   const poNum = document.getElementById('po-number').value.trim().toLowerCase();
@@ -1628,7 +2611,7 @@ function doSearch() {
   if (results.length === 0) {
     es.style.display = 'flex';
     rs.style.display = 'none';
-    showToast('Tidak ada PO yang cocok dengan filter.', 'error');
+    showToast('No PO matches the filter.', 'error');
   } else {
     es.style.display = 'none';
     rs.style.display = 'block';
@@ -1663,12 +2646,18 @@ function renderSummaryTable(data) {
       <td>${badge(po.status)}</td>
       <td class="num">${(po.qtyPIB||0).toLocaleString()}</td>
       <td class="num">${(po.qtyWarehouse||0).toLocaleString()}</td>
-      <td>
-        <button class="btn-detail" onclick="showDetail('${po.poNumber}')">
+      <td style="white-space:nowrap">
+        <button class="btn-detail" onclick="showDetail('${po.poNumber}')" title="Lihat detail PO">
           <i class="ti ti-eye"></i> Detail
         </button>
-        <button class="btn-detail btn-detail-danger" onclick="showAddPoForm('${po.poNumber}')">
-          <i class="ti ti-edit"></i>
+        <button class="btn-detail" onclick="goToCiValidation('${po.poNumber}')" title="Verifikasi PO — Qty &amp; Value CI">
+          <i class="ti ti-file-search"></i>
+        </button>
+        <button class="btn-detail" onclick="showAddPoForm('${po.poNumber}')" title="Update Qty PIB &amp; Qty WH (Inbound)">
+          <i class="ti ti-truck-delivery"></i>
+        </button>
+        <button class="btn-detail" onclick="openEditLogModal('${po.poNumber}')" title="Log of who edited this PO">
+          <i class="ti ti-history"></i>
         </button>
       </td>
     `;
@@ -1680,6 +2669,7 @@ function renderSummaryTable(data) {
 function showDetail(poNumber) {
   const po = MOCK_PO_DATA.find(p => p.poNumber === poNumber);
   if (!po) return;
+  currentDetailPoNumber = poNumber;
 
   document.getElementById('header-info-table').innerHTML = `
     <tr><td>PO Number</td>  <td style="color:var(--c-blue-dark)">${po.poNumber}</td></tr>
@@ -1701,7 +2691,7 @@ function showDetail(poNumber) {
     const qPO  = Number(it.qtyPO  || it.qtyPIB || 0);
     const qPIB = Number(it.qtyPIB || 0);
     const qWH  = Number(it.qtyWarehouse || 0);
-    const s = qWH - qPO;
+    const s = (qWH > 0 ? qWH : qPIB) - qPO;
     totPO += qPO; totPIB += qPIB; totWH += qWH;
     const itType = it.type || detectItemType(it.sku || '', it.name || '');
     const tr = document.createElement('tr');
@@ -1725,10 +2715,12 @@ function showDetail(poNumber) {
     <td class="num">${totPO.toLocaleString()}</td>
     <td class="num">${totPIB.toLocaleString()}</td>
     <td class="num">${totWH.toLocaleString()}</td>
-    <td class="num">${selisih(totWH - totPO)}</td>
+    <td class="num">${selisih((totWH > 0 ? totWH : totPIB) - totPO)}</td>
     <td></td>
   `;
   tbody.appendChild(totRow);
+
+  renderEditLog(poNumber);
 
   const ds = document.getElementById('detail-section');
   ds.style.display = 'block';
@@ -1738,6 +2730,7 @@ function showDetail(poNumber) {
 function closeDetail() {
   const el = document.getElementById('detail-section');
   if (el) el.style.display = 'none';
+  currentDetailPoNumber = null;
 }
 
 // ── History PO ────────────────────────────────────────────────
@@ -1756,7 +2749,7 @@ function renderPibHistory(filter = '') {
   if (countEl) countEl.textContent = data.length + ' PO';
 
   if (data.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--c-text-hint)">Tidak ada data ditemukan</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--c-text-hint)">No data found</td></tr>`;
     return;
   }
 
@@ -1777,8 +2770,14 @@ function renderPibHistory(filter = '') {
         <button class="btn-detail" style="margin-left:4px" onclick="goToCiValidation('${po.poNumber}')" title="Validasi qty PO vs CI">
           <i class="ti ti-file-search"></i> Validasi CI
         </button>
-        <button class="btn-detail" style="margin-left:4px" onclick="goToValueRecon('${po.poNumber}')" title="Rekonsiliasi value PO vs CI">
-          <i class="ti ti-scale"></i> Value Recon
+        <button class="btn-detail" style="margin-left:4px" onclick="goToPaymentProof('${po.poNumber}')" title="Check this PO's payment status (matches payment proofs by the same PO Number)">
+          <i class="ti ti-receipt"></i> Payment Proof
+        </button>
+        <button class="btn-detail" style="margin-left:4px" onclick="goToComparePib('${po.poNumber}')" title="Detect a PIB PDF and compare its quantities against this PO">
+          <i class="ti ti-file-diff"></i> Compare PIB
+        </button>
+        <button class="btn-detail" style="margin-left:4px" onclick="openEditLogModal('${po.poNumber}')" title="Log of who edited this PO">
+          <i class="ti ti-history"></i>
         </button>
       </td>
     `;
@@ -1794,10 +2793,15 @@ function goToCiValidation(poNumber) {
   if (select) { select.value = poNumber; selectCiPo(poNumber); }
 }
 
-function goToValueRecon(poNumber) {
+// History PO → Payment Proof: jump straight to the Payment Proof Matching
+// page and auto-search by this exact PO Number, then show its aggregated
+// payment status (paid / partial / not yet paid) with attachments.
+function goToPaymentProof(poNumber) {
   switchTab('valrecon');
-  const select = document.getElementById('vr-po-select');
-  if (select) { select.value = poNumber; vrSelectPo(poNumber); }
+  const search = document.getElementById('pm-search');
+  if (search) search.value = poNumber;
+  pmRefreshFilters();
+  pmShowPoPaymentStatus(poNumber);
 }
 
 function filterHistory() {
@@ -1898,7 +2902,7 @@ function addItemRow(item = {}) {
   const qPO  = item.qtyPO  != null ? item.qtyPO  : '';
   const qPIB = item.qtyPIB != null ? item.qtyPIB : '';
   const qWH  = item.qtyWarehouse != null ? item.qtyWarehouse : '';
-  const diff = (Number(qWH)||0) - (Number(qPO)||0);
+  const diff = (Number(qWH) > 0 ? Number(qWH) : (Number(qPIB) || 0)) - (Number(qPO) || 0);
   const diffCls = diff>0 ? 'sel-pos' : diff<0 ? 'sel-neg' : 'sel-zero';
   const diffTxt = diff===0 ? '0' : diff>0 ? `+${diff}` : `${diff}`;
   const type = item.type || detectItemType(sku, item.name || '');
@@ -1918,7 +2922,7 @@ function addItemRow(item = {}) {
     <td class="num"><span class="item-selisih ${diffCls}">${diffTxt}</span></td>
     <td class="num"><input type="number" class="item-unit-price" value="${unitPrice}" min="0" step="0.01" placeholder="0.00" /></td>
     <td class="num"><input type="number" class="item-discount" value="${discountPct}" min="0" max="100" step="0.01" placeholder="0"
-          title="Diskon 100% = item ini Net Price-nya 0 (biasanya GWP/FOC)" /></td>
+          title="100% discount = this item's Net Price is 0 (usually GWP/FOC)" /></td>
     <td class="num"><span class="item-value-po">${valuePO ? valuePO.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) : '0.00'}</span></td>
     <td><button class="btn-sm" type="button" onclick="removeItemRow(this)"><i class="ti ti-x"></i></button></td>
   `;
@@ -1933,8 +2937,12 @@ function addItemRow(item = {}) {
   const updateRow = () => {
     const p  = Number(qPibInput.value || 0);
     const w  = Number(qWhInput.value  || 0);
-    const po = Number(qPoInput.value  || p);
-    const d  = w - po;
+    const po = Number(qPoInput.value  || 0);
+    // Received qty so far: Qty WH once Warehouse Admin fills it in, otherwise
+    // fall back to Qty PIB (e.g. right after applying Compare PIB) so the
+    // Difference reacts immediately instead of staying stuck at 0.
+    const received = w > 0 ? w : p;
+    const d  = received - po;
     const span = row.querySelector('.item-selisih');
     span.textContent = d===0 ? '0' : d>0 ? `+${d}` : `${d}`;
     span.className = `item-selisih ${d>0?'sel-pos':d<0?'sel-neg':'sel-zero'}`;
@@ -2020,12 +3028,27 @@ function submitPibForm() {
 
   const existing = MOCK_PO_DATA.find(p => p.poNumber === poNumber);
   if (existing) {
+    const before = {
+      qtyPIB:       existing.qtyPIB || 0,
+      qtyWarehouse: existing.qtyWarehouse || 0,
+      poValue:      existing.poValue || 0,
+      pibNumber:    existing.pibNumber || '',
+    };
     Object.assign(existing, { poDate, supplier, supplierLabel: supplier, revCode, pibNumber: pibNum, pibDate,
       qtyPIB, qtyWarehouse: qtyWH, poValue, currency, status, items });
+
+    const changes = [];
+    if (before.qtyPIB !== qtyPIB) changes.push(`Qty PIB: ${before.qtyPIB.toLocaleString()} → ${qtyPIB.toLocaleString()}`);
+    if (before.qtyWarehouse !== qtyWH) changes.push(`Qty WH (Inbound): ${before.qtyWarehouse.toLocaleString()} → ${qtyWH.toLocaleString()}`);
+    if (Math.abs(before.poValue - poValue) > 0.005) changes.push(`PO Value: ${currency} ${fmt(before.poValue)} → ${currency} ${fmt(poValue)}`);
+    if (before.pibNumber !== pibNum) changes.push(`No. PIB: ${before.pibNumber || '—'} → ${pibNum || '—'}`);
+    logActivity(poNumber, 'Update PIB / Qty WH', changes.length ? changes.join('; ') : 'Data PO diperbarui.');
+
     showToast('Data PO berhasil diperbarui!', 'success');
   } else {
     MOCK_PO_DATA.push({ poNumber, poDate, supplier, supplierLabel: supplier, revCode,
       pibNumber: pibNum, pibDate, currency, status, qtyPIB, qtyWarehouse: qtyWH, poValue, items });
+    logActivity(poNumber, 'Tambah PO Baru', `Qty PIB ${qtyPIB.toLocaleString()}, Qty WH ${qtyWH.toLocaleString()}, Value ${currency} ${fmt(poValue)}`);
     showToast('PO baru berhasil ditambahkan!', 'success');
   }
 
@@ -2073,7 +3096,7 @@ function addShipment() {
   const ataWarehouse  = document.getElementById('shipment-ata-wh').value;
 
   if (!name || !brand || !containerType || !etd || !ataPort || !ataWarehouse) {
-    showToast('Lengkapi semua field wajib pada form shipment.', 'error');
+    showToast('Please fill in all required fields in the shipment form.', 'error');
     return;
   }
 
@@ -2172,7 +3195,7 @@ function renderShipmentDashboard() {
   list.innerHTML = '';
   const filtered = applyShipmentFilters(MOCK_SHIPMENTS);
   if (!filtered.length) {
-    list.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--c-text-hint)">Tidak ada shipment ditemukan. Klik "Tambah Shipment" untuk menambahkan.</td></tr>`;
+    list.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--c-text-hint)">No shipments found. Click "Add Shipment" to add one.</td></tr>`;
     return;
   }
   filtered.forEach((item, i) => {
@@ -2238,7 +3261,7 @@ function renderShipmentTop5(containerId, options = {}) {
           <span style="margin-left:12px"><i class="ti ti-truck" style="font-size:11px;margin-right:3px"></i>Liner: ${item.linerShipment||'—'}</span>
         </div>
         <div class="shipment-stack-countdown">
-          ${item.etaDistance >= 0 ? `<i class="ti ti-clock" style="margin-right:6px"></i>${item.etaDistance} hari lagi` : `<i class="ti ti-check" style="margin-right:6px"></i>Sudah tiba`}
+          ${item.etaDistance >= 0 ? `<i class="ti ti-clock" style="margin-right:6px"></i>${item.etaDistance} days left` : `<i class="ti ti-check" style="margin-right:6px"></i>Arrived`}
         </div>
       `;
       grid.appendChild(card);
@@ -2269,7 +3292,7 @@ function renderShipmentTop5(containerId, options = {}) {
           <span style="margin-left:12px">Liner: ${item.linerShipment||'—'}</span>
         </div>
         <div class="shipment-stack-countdown">
-          ${item.etaDistance >= 0 ? `${item.etaDistance} hari lagi` : 'Sudah tiba'}
+          ${item.etaDistance >= 0 ? `${item.etaDistance} days left` : 'Arrived'}
         </div>
       `;
       grid.appendChild(card);
@@ -2320,7 +3343,7 @@ function renderHomeCalendar() {
           <button class="calendar-nav-btn" onclick="calendarPrev()"><i class="ti ti-chevron-left"></i></button>
           <span class="calendar-month-label">${MONTH_NAMES[calendarMonth]} ${calendarYear}</span>
           <button class="calendar-nav-btn" onclick="calendarNext()"><i class="ti ti-chevron-right"></i></button>
-          <button class="calendar-nav-btn" onclick="calendarToday()" title="Kembali ke bulan ini" style="font-size:12px;font-weight:700;width:auto;padding:0 10px">Today</button>
+          <button class="calendar-nav-btn" onclick="calendarToday()" title="Back to this month" style="font-size:12px;font-weight:700;width:auto;padding:0 10px">Today</button>
         </div>
         <div class="calendar-legend">
           <span class="calendar-legend-item"><span class="calendar-dot dot-etd"></span> ETD (Keberangkatan)</span>
@@ -2402,6 +3425,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('today-date').textContent =
     new Date().toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
 
+  ensureCurrentUser();
   updateKPI(getAllPoData());
   renderBrandOptions();
   renderPibHistory();
@@ -2435,12 +3459,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // ══════════════════════════════════════════════════════════════
 //
 // Konsep:
-//  1. User pilih PO yang sudah tersimpan (Value PO per item = Qty PO × Harga Satuan,
-//     sudah dihitung otomatis saat "Buat PO").
-//  2. User input Value CI per item (dari Commercial Invoice / dokumen supplier).
-//  3. Sistem membandingkan Value PO vs Value CI per item (dan totalnya) →
-//     menghasilkan status Match / Kurang / Lebih per SKU dan overall per PO.
-//  4. Hasil rekonsiliasi bisa disimpan sebagai history.
+//  1. User selects a saved PO (Value PO per item = Qty PO × Unit Price,
+//     already calculated automatically when the PO was created).
+//  2. User enters Value CI per item (from the Commercial Invoice / supplier document).
+//  3. The system compares Value PO vs Value CI per item (and the total) →
+//     producing a Match / Short / Excess status per SKU and overall per PO.
+//  4. The reconciliation result can be saved as history.
 
 // ── Data stores (in-memory) ──────────────────────────────────
 let VR_RECORDS   = []; // [{id, poNumber, brand, currency, reconciledAt, rows:[{sku,name,qtyPO,unitPrice,valuePO,valueCI,diff,status}], totalValuePO, totalValueCI, totalDiff, status}]
@@ -2471,9 +3495,10 @@ function getCiAmountMapForPo(poNumber) {
   const rec = history[0];
   const map = {};
   (rec.rows || []).forEach(r => {
-    if (r.extraFromCi || !r.ciAmount) return;
-    if (r.sku) map['sku:' + r.sku.toUpperCase()] = r.ciAmount;
-    if (r.name) map['name:' + normStr(r.name)] = r.ciAmount;
+    const val = r.valueCI != null ? r.valueCI : r.ciAmount;
+    if (r.extraFromCi || !val) return;
+    if (r.sku) map['sku:' + r.sku.toUpperCase()] = val;
+    if (r.name) map['name:' + normStr(r.name)] = val;
   });
   return { map, verifiedAt: rec.verifiedAt, fileName: rec.fileName };
 }
@@ -2494,205 +3519,319 @@ function initValRecon() {
 
 // ══════════════════════════════════════════════════════════════
 // PAYMENT PROOF MATCHING
-// Cocokkan nilai di bukti pembayaran (bisa full, DP sebagian, atau
-// gabungan beberapa PO sekaligus) dengan kombinasi Value PO / Value CI
-// yang sudah ada di sistem, lewat pencarian subset-sum.
+// Match the value on the payment proof (can be full, a partial down payment, or
+// combining several POs at once) with the Value PO / Value CI combination
+// already in the system, via subset-sum search.
 // ══════════════════════════════════════════════════════════════
 
-// Value CI "terbaik" yang diketahui untuk sebuah PO:
-// 1) hasil Value Reconciliation tersimpan (paling akurat — sudah dicek manual)
-// 2) kalau belum ada, fallback ke total Amount/Value dari hasil Verifikasi CI terakhir
+// The "best" known Value CI for a PO:
+// 1) saved Value Reconciliation result (most accurate — already checked manually)
+// 2) if none yet, fall back to the total Amount/Value from the latest CI Verification
 function getKnownValueCiForPo(poNumber) {
+  // 1) Verifikasi CI (merged qty+value) — most current, edited inline
+  const ciHist = loadCiHistory()
+    .filter(r => r.poNumber === poNumber)
+    .sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt))[0];
+  if (ciHist) {
+    if (ciHist.totalValueCI > 0) return ciHist.totalValueCI;
+    const sum = (ciHist.rows || []).reduce((s, r) => s + (r.valueCI != null ? r.valueCI : (r.ciAmount || 0)), 0);
+    if (sum > 0) return sum;
+  }
+
+  // 2) Legacy standalone Value Reconciliation records (older data)
   const vr = VR_RECORDS
     .filter(r => r.poNumber === poNumber)
     .sort((a, b) => new Date(b.reconciledAt) - new Date(a.reconciledAt))[0];
   if (vr) return vr.totalValueCI;
 
-  const ciHist = loadCiHistory()
-    .filter(r => r.poNumber === poNumber)
-    .sort((a, b) => new Date(b.verifiedAt) - new Date(a.verifiedAt))[0];
-  if (ciHist) {
-    const sum = (ciHist.rows || []).filter(r => !r.extraFromCi).reduce((s, r) => s + (r.ciAmount || 0), 0);
-    if (sum > 0) return sum;
-  }
   return null;
 }
 
-function pmGetCandidatePool(basis) {
-  const pool = [];
-  getAllPoData().forEach(po => {
-    const currency = po.currency || 'USD';
-    const brand = po.supplierLabel || po.supplier || '—';
-    let value = null;
-    if (basis === 'ci') {
-      value = getKnownValueCiForPo(po.poNumber);
-    } else {
-      value = po.poValue != null && po.poValue !== ''
-        ? Number(po.poValue)
-        : (po.items || []).reduce((s, i) => s + (Number(i.valuePO) || (Number(i.qtyPO) || 0) * (Number(i.unitPrice) || 0)), 0);
-    }
-    if (!(value > 0)) return;
-    pool.push({ poNumber: po.poNumber, brand, currency, value });
-  });
-  return pool;
+let pmSelectedProofId = null;
+
+function getPoByNumber(poNumber) {
+  return MOCK_PO_DATA.find(p => p.poNumber === poNumber) || null;
+}
+
+function getPaymentProofById(paymentId) {
+  return (MOCK_PAYMENT_PROOFS || []).find(p => p.paymentId === paymentId) || null;
+}
+
+function pmFormatMoney(value, currency) {
+  const num = Number(value) || 0;
+  return `${currency || ''} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
 }
 
 function pmRefreshFilters() {
-  const basisEl = document.getElementById('pm-basis');
+  const search = (document.getElementById('pm-search')?.value || '').trim().toLowerCase();
   const currencySel = document.getElementById('pm-currency');
   const brandSel = document.getElementById('pm-brand');
-  const countEl = document.getElementById('pm-pool-count');
-  if (!basisEl || !currencySel || !brandSel) return;
+  const statusSel = document.getElementById('pm-status');
+  const dateSel = document.getElementById('pm-date');
+  const countEl = document.getElementById('pm-result-count');
+  const totalEl = document.getElementById('pm-kpi-total');
+  const matchedEl = document.getElementById('pm-kpi-matched');
+  const partialEl = document.getElementById('pm-kpi-partial');
+  const unmatchedEl = document.getElementById('pm-kpi-unmatched');
 
-  const basis = basisEl.value || 'po';
-  const pool = pmGetCandidatePool(basis);
+  const currency = currencySel?.value || '';
+  const brand = brandSel?.value || '';
+  const status = statusSel?.value || '';
+  const date = dateSel?.value || '';
 
-  const currencies = [...new Set(pool.map(p => p.currency))].sort();
-  const curVal = currencySel.value;
-  currencySel.innerHTML = '<option value="">— Pilih Mata Uang —</option>' + currencies.map(c => `<option value="${c}">${c}</option>`).join('');
-  if (currencies.includes(curVal)) currencySel.value = curVal;
-  else if (currencies.length === 1) currencySel.value = currencies[0];
+  const proofs = (MOCK_PAYMENT_PROOFS || []).map(p => ({
+    ...p,
+    searchKey: `${p.paymentId} ${p.poNumber} ${p.ciNumber} ${p.brand}`.toLowerCase()
+  }));
 
-  const brands = [...new Set(pool.map(p => p.brand))].sort();
-  const brandVal = brandSel.value;
-  brandSel.innerHTML = '<option value="">Semua Brand</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
-  if (brands.includes(brandVal)) brandSel.value = brandVal;
-
-  if (countEl) {
-    countEl.textContent = pool.length
-      ? `${pool.length} PO memiliki data ${basis === 'ci' ? 'Value CI' : 'Value PO'} yang bisa dicocokkan.`
-      : `Belum ada PO dengan data ${basis === 'ci' ? 'Value CI (lakukan Verifikasi CI / Value Reconciliation dulu)' : 'Value PO'}.`;
-  }
-}
-
-function pmParsePercentages() {
-  const checked = Array.from(document.querySelectorAll('.pm-pct-chk:checked')).map(el => Number(el.value));
-  const customRaw = document.getElementById('pm-custom-pct')?.value || '';
-  const custom = customRaw.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n) && n > 0 && n <= 100);
-  return [...new Set([...checked, ...custom])];
-}
-
-// Backtracking subset-sum where each PO may contribute AT MOST ONE chosen
-// percent-variant per combination (can't pay "50% + 100%" of the same PO).
-// Bounded by an iteration cap + result cap so it stays fast in-browser even
-// with a fairly large candidate pool.
-function pmSubsetSearch(candidates, target, tolerance, maxItems) {
-  const sorted = [...candidates].sort((a, b) => b.amount - a.amount);
-  const results = [];
-  const MAX_RESULTS = 25;
-  const MAX_ITER = 400000;
-  let iter = 0;
-  let truncated = false;
-
-  function dfs(start, remaining, chosen) {
-    if (chosen.length > 0 && Math.abs(remaining) <= tolerance) {
-      results.push({ items: chosen.slice(), diff: remaining });
-      return; // don't extend an already-matching combo with more items
-    }
-    if (chosen.length >= maxItems) return;
-    for (let i = start; i < sorted.length; i++) {
-      iter++;
-      if (iter > MAX_ITER) { truncated = true; return; }
-      if (results.length >= MAX_RESULTS) return;
-      const c = sorted[i];
-      if (c.amount - tolerance > remaining) continue; // would overshoot beyond tolerance
-      if (chosen.some(x => x.poNumber === c.poNumber)) continue; // one variant per PO only
-      chosen.push(c);
-      dfs(i + 1, remaining - c.amount, chosen);
-      chosen.pop();
-      if (truncated || results.length >= MAX_RESULTS) return;
-    }
+  const currencies = [...new Set(proofs.map(p => p.currency).filter(Boolean))].sort();
+  const currentCurrency = currencySel?.value;
+  if (currencySel) {
+    currencySel.innerHTML = '<option value="">All Currencies</option>' + currencies.map(c => `<option value="${c}">${c}</option>`).join('');
+    if (currencies.includes(currentCurrency)) currencySel.value = currentCurrency;
+    else if (currencies.length === 1) currencySel.value = currencies[0];
   }
 
-  dfs(0, target, []);
-  results.sort((a, b) => a.items.length - b.items.length || Math.abs(a.diff) - Math.abs(b.diff));
-  return { results, truncated };
-}
-
-function pmFindMatches() {
-  const basis     = document.getElementById('pm-basis')?.value || 'po';
-  const currency  = document.getElementById('pm-currency')?.value;
-  const brand     = document.getElementById('pm-brand')?.value;
-  const target    = parseMoneyNum(document.getElementById('pm-paid-value')?.value || '');
-  const tolerance = Math.abs(parseMoneyNum(document.getElementById('pm-tolerance')?.value || '1')) || 0;
-  const maxCombo  = parseInt(document.getElementById('pm-max-combo')?.value || '3', 10);
-  const percentages = pmParsePercentages();
-
-  if (!currency) { showToast('Pilih mata uang terlebih dahulu.', 'error'); return; }
-  if (!target || target <= 0) { showToast('Masukkan nilai yang dibayarkan.', 'error'); return; }
-  if (!percentages.length) { showToast('Pilih atau isi minimal 1 persentase DP.', 'error'); return; }
-
-  let pool = pmGetCandidatePool(basis).filter(p => p.currency === currency);
-  if (brand) pool = pool.filter(p => p.brand === brand);
-
-  const resultsEl = document.getElementById('pm-results');
-  if (!pool.length) {
-    resultsEl.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-alert-circle"></i> Tidak ada PO dengan data ${basis === 'ci' ? 'Value CI' : 'Value PO'} untuk mata uang ${currency}${brand ? ' & brand ' + brand : ''}.</div>`;
-    return;
+  const brands = [...new Set(proofs.map(p => p.brand).filter(Boolean))].sort();
+  const currentBrand = brandSel?.value;
+  if (brandSel) {
+    brandSel.innerHTML = '<option value="">All Brands</option>' + brands.map(b => `<option value="${b}">${b}</option>`).join('');
+    if (brands.includes(currentBrand)) brandSel.value = currentBrand;
   }
 
-  const candidates = [];
-  pool.forEach(p => {
-    percentages.forEach(pct => {
-      candidates.push({ poNumber: p.poNumber, brand: p.brand, currency: p.currency, percent: pct, baseValue: p.value, amount: p.value * pct / 100 });
-    });
+  const filtered = proofs.filter(p => {
+    if (search && !p.searchKey.includes(search)) return false;
+    if (currency && p.currency !== currency) return false;
+    if (brand && p.brand !== brand) return false;
+    if (status && p.status !== status) return false;
+    if (date && p.paymentDate !== date) return false;
+    return true;
   });
 
-  resultsEl.innerHTML = `<div style="padding:16px;text-align:center;color:var(--c-text-hint);font-size:13px"><i class="ti ti-loader-2" style="animation:spin .7s linear infinite;margin-right:6px"></i>Mencari kombinasi…</div>`;
+  const matchedCount = proofs.filter(p => p.status === 'matched').length;
+  const partialCount = proofs.filter(p => p.status === 'partial').length;
+  const unmatchedCount = proofs.filter(p => p.status === 'unmatched').length;
+  if (totalEl) totalEl.textContent = proofs.length;
+  if (matchedEl) matchedEl.textContent = matchedCount;
+  if (partialEl) partialEl.textContent = partialCount;
+  if (unmatchedEl) unmatchedEl.textContent = unmatchedCount;
 
-  // Let the loading state paint before the (synchronous) search runs
-  setTimeout(() => {
-    const { results, truncated } = pmSubsetSearch(candidates, target, tolerance, maxCombo);
-    pmRenderResults(results, target, tolerance, currency, truncated);
-  }, 30);
+  if (countEl) {
+    countEl.textContent = filtered.length
+      ? `Showing ${filtered.length} of ${proofs.length} payment proofs. Matched ${matchedCount}, Partial ${partialCount}, Unmatched ${unmatchedCount}.`
+      : `No payment proof matches the filter. ${proofs.length} total available.`;
+  }
+
+  pmRenderPaymentProofList(filtered);
+
+  if (pmSelectedProofId && !filtered.some(p => p.paymentId === pmSelectedProofId)) {
+    pmSelectedProofId = null;
+    const detailCard = document.getElementById('pm-detail-card');
+    if (detailCard) detailCard.style.display = 'none';
+  }
 }
 
-function pmRenderResults(results, target, tolerance, currency, truncated) {
+function pmRenderPaymentProofList(proofs) {
   const el = document.getElementById('pm-results');
   if (!el) return;
-  const fmt = n => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-  if (!results.length) {
-    el.innerHTML = `
-      <div class="dash-alert-empty"><i class="ti ti-alert-circle"></i>
-        Tidak ditemukan kombinasi yang cocok dengan ${currency} ${fmt(target)} (toleransi ±${fmt(tolerance)}).
-        Coba tambah persentase DP, perbesar toleransi, atau naikkan jumlah maks. PO digabung.
-      </div>`;
+  if (!proofs.length) {
+    el.innerHTML = `<div class="dash-alert-empty"><i class="ti ti-alert-circle"></i> No payment proof matches the current filter.</div>`;
     return;
   }
 
+  const rows = proofs.map(p => `
+      <tr>
+        <td>${p.paymentId}</td>
+        <td>${p.poNumber || '—'}</td>
+        <td>${p.ciNumber || '—'}</td>
+        <td>${p.brand || '—'}</td>
+        <td>${p.currency || '—'}</td>
+        <td class="num">${pmFormatMoney(p.amount, p.currency)}</td>
+        <td>${p.status}</td>
+        <td>${p.paymentDate || '—'}</td>
+        <td style="white-space:nowrap"><button class="btn-ghost btn-sm" onclick="pmShowProofDetail('${p.paymentId}')">Detail</button></td>
+      </tr>
+    `).join('');
+
   el.innerHTML = `
-    <div class="hint-box hint-box-blue" style="margin-bottom:12px">
-      <i class="ti ti-circle-check"></i>
-      Ditemukan <strong>${results.length}</strong> kombinasi yang cocok dengan <strong>${currency} ${fmt(target)}</strong> (toleransi ±${fmt(tolerance)}).
-      ${truncated ? ' Pencarian dihentikan lebih awal karena kombinasi terlalu banyak — persempit filter brand/mata uang atau kurangi maks. PO digabung untuk hasil lebih fokus.' : ''}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Payment ID</th>
+            <th>PO Number</th>
+            <th>CI Number</th>
+            <th>Brand</th>
+            <th>Currency</th>
+            <th class="num">Amount</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// Shared renderer: full payment history for a PO as a 4-column table
+// (No / Payment For / Amount / Attachment), so it's obvious which
+// installment number a payment is out of the total. Used both by the
+// search-result "Detail" button (highlights the clicked row) and by
+// jumping in straight from History PO → Payment Proof.
+function buildPaymentHistoryHtml(poNumber, highlightPaymentId) {
+  const proofs = (MOCK_PAYMENT_PROOFS || []).filter(p => p.poNumber === poNumber);
+  const po = getPoByNumber(poNumber);
+
+  if (!proofs.length) {
+    return `
+      <div class="dash-alert-empty"><i class="ti ti-alert-circle"></i>
+        No payment proof found yet for PO <strong>${poNumber}</strong>. Status: <strong>Not Yet Paid</strong>.
+      </div>`;
+  }
+
+  const currency = proofs[0].currency || po?.currency || '';
+  const totalPaid = proofs.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const poValue = po ? Number(po.poValue || 0) : null;
+  const noPib = po?.pibNumber || ''; // detected from Compare PIB (applied to the PO)
+  const valueCI = getKnownValueCiForPo(poNumber); // detected from Compare CI / CI Verification
+
+  // Matching basis: Value CI is the source of truth once it's been verified;
+  // fall back to PO Value only if Value CI isn't available yet.
+  const hasValueCI = valueCI != null && valueCI > 0;
+  const basisValue = hasValueCI ? valueCI : poValue;
+  const basisLabel = hasValueCI ? 'Value CI' : 'PO Value (Value CI not verified yet)';
+
+  let statusLabel, statusColor;
+  if (basisValue != null && basisValue > 0) {
+    if (totalPaid >= basisValue - 0.5) { statusLabel = 'Fully Paid'; statusColor = '#16a34a'; }
+    else if (totalPaid > 0) { statusLabel = 'Partially Paid'; statusColor = '#f97316'; }
+    else { statusLabel = 'Not Yet Paid'; statusColor = '#ef4444'; }
+  } else {
+    statusLabel = totalPaid > 0 ? 'Payment Recorded' : 'Not Yet Paid';
+    statusColor = totalPaid > 0 ? '#16a34a' : '#ef4444';
+  }
+
+  const remaining = basisValue != null ? Math.max(basisValue - totalPaid, 0) : null;
+  const sortedProofs = proofs.slice().sort((a, b) => (a.paymentDate || '').localeCompare(b.paymentDate || ''));
+  const total = sortedProofs.length;
+
+  const rows = sortedProofs.map((p, idx) => {
+    const isHighlighted = p.paymentId === highlightPaymentId;
+    return `
+      <tr style="${isHighlighted ? 'background:rgba(37,99,235,.08)' : ''}">
+        <td>${idx + 1} of ${total}</td>
+        <td>
+          <strong>${p.termLabel || 'Payment'}</strong>
+          <div style="font-size:12px;color:var(--c-text-hint)">${fmtDate(p.paymentDate) || '—'} · ${p.bank || '—'} · Payment ID ${p.paymentId}</div>
+          ${p.note ? `<div style="font-size:12px;color:var(--c-text-hint);margin-top:2px">${p.note}</div>` : ''}
+        </td>
+        <td class="num" style="color:#16a34a;font-weight:600">${pmFormatMoney(p.amount, p.currency)}</td>
+        <td>
+          ${p.attachment ? `
+            <div style="cursor:pointer" onclick="openPaymentAttachment('${p.attachment}', '${(p.attachmentLabel || p.paymentId).replace(/'/g, "\\'")}')">
+              <img src="${p.attachment}" alt="Payment proof" style="width:70px;border-radius:6px;border:1px solid var(--c-border);display:block" />
+              <div style="font-size:11px;color:var(--c-blue);margin-top:3px;white-space:nowrap"><i class="ti ti-zoom-in"></i> View</div>
+            </div>` : `
+            <div style="width:70px;height:50px;border:1px dashed var(--c-border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--c-text-hint)">
+              <i class="ti ti-photo-off"></i>
+            </div>`}
+        </td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center;margin-bottom:6px">
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">PO Number</div>
+        <div style="font-weight:600">${poNumber}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">Brand</div>
+        <div style="font-weight:600">${proofs[0].brand || po?.supplierLabel || '—'}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">No. PIB <span style="font-weight:400">(Compare PIB)</span></div>
+        <div style="font-weight:600">${noPib || '<span style="color:var(--c-text-hint);font-weight:400">Not detected yet</span>'}</div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">Value CI <span style="font-weight:400">(Compare CI)</span></div>
+        <div style="font-weight:600">${hasValueCI ? pmFormatMoney(valueCI, currency) : '<span style="color:var(--c-text-hint);font-weight:400">Not verified yet</span>'}</div>
+      </div>
+      ${poValue != null ? `
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">PO Value</div>
+        <div style="font-weight:600">${pmFormatMoney(poValue, currency)}</div>
+      </div>` : ''}
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">Total Paid</div>
+        <div style="font-weight:600">${pmFormatMoney(totalPaid, currency)}</div>
+      </div>
+      ${remaining != null ? `
+      <div>
+        <div style="font-size:12px;color:var(--c-text-hint)">Remaining</div>
+        <div style="font-weight:600">${pmFormatMoney(remaining, currency)}</div>
+      </div>` : ''}
+      <div style="margin-left:auto">
+        <span style="display:inline-block;padding:5px 14px;border-radius:999px;font-size:12.5px;font-weight:600;color:#fff;background:${statusColor}">
+          ${statusLabel}
+        </span>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--c-text-hint);margin-bottom:14px">
+      <i class="ti ti-info-circle"></i> Payment status is matched against <strong>${basisLabel}</strong>.
     </div>
     <div class="table-wrap">
       <table class="data-table">
-        <thead><tr><th>#</th><th>Kombinasi PO</th><th class="num">Total Kombinasi</th><th class="num">Selisih</th></tr></thead>
-        <tbody>
-          ${results.map((r, i) => {
-            const total = r.items.reduce((s, x) => s + x.amount, 0);
-            const diffTxt = Math.abs(r.diff) < 0.005 ? `<span class="sel-zero">0.00</span>`
-              : r.diff > 0 ? `<span class="sel-pos">+${fmt(r.diff)}</span>`
-              : `<span class="sel-neg">${fmt(r.diff)}</span>`;
-            const combo = r.items.map(x => `
-              <div style="display:flex;gap:8px;align-items:center;padding:2px 0">
-                <span style="font-family:monospace;font-weight:600;color:var(--c-blue-dark)">${x.poNumber}</span>
-                <span style="color:var(--c-text-hint);font-size:12px">${x.brand}</span>
-                <span class="badge badge-gray" style="font-size:11px">${x.percent}%</span>
-                <span style="font-size:12px;color:var(--c-text-sub)">${fmt(x.amount)}</span>
-              </div>`).join('');
-            return `<tr>
-              <td>${i + 1}</td>
-              <td>${combo}</td>
-              <td class="num"><strong>${fmt(total)}</strong></td>
-              <td class="num">${diffTxt}</td>
-            </tr>`;
-          }).join('')}
-        </tbody>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Payment For</th>
+            <th class="num">Amount</th>
+            <th>Attachment</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
       </table>
-    </div>`;
+    </div>
+  `;
+}
+
+function pmShowProofDetail(paymentId) {
+  const proof = getPaymentProofById(paymentId);
+  if (!proof) return;
+  pmSelectedProofId = paymentId;
+  const detailCard = document.getElementById('pm-detail-card');
+  const detailContent = document.getElementById('pm-detail-content');
+  if (!detailCard || !detailContent) return;
+  detailCard.style.display = 'block';
+  detailContent.innerHTML = buildPaymentHistoryHtml(proof.poNumber, paymentId);
+}
+
+// Straight PO → Payment status check: matches payment proofs strictly by
+// PO Number (no fuzzy/amount matching) and reports whether that PO has
+// been paid in full, partially, or not at all.
+function pmShowPoPaymentStatus(poNumber) {
+  const card = document.getElementById('pm-po-status-card');
+  const content = document.getElementById('pm-po-status-content');
+  if (!card || !content) return;
+  card.style.display = 'block';
+  content.innerHTML = buildPaymentHistoryHtml(poNumber, null);
+}
+
+function openPaymentAttachment(src, label) {
+  const modal = document.getElementById('payment-attachment-modal');
+  const img = document.getElementById('payment-attachment-img');
+  const title = document.getElementById('payment-attachment-title');
+  if (!modal || !img) return;
+  img.src = src;
+  if (title) title.textContent = label || 'Payment Proof';
+  modal.style.display = 'block';
+}
+
+function closePaymentAttachment() {
+  const modal = document.getElementById('payment-attachment-modal');
+  if (modal) modal.style.display = 'none';
 }
 
 function populateVrPoSelect() {
@@ -2786,7 +3925,7 @@ function vrSelectPo(poNumber) {
   vrRenderReconTable();
 
   if (autoFilledCount > 0) {
-    showToast(`✓ ${autoFilledCount} Value CI diisi otomatis dari Verifikasi CI${ciAmountInfo.fileName ? ' ('+ciAmountInfo.fileName+')' : ''}. Silakan periksa/edit bila perlu.`, 'success');
+    showToast(`✓ ${autoFilledCount} Value CI auto-filled from CI Verification${ciAmountInfo.fileName ? ' ('+ciAmountInfo.fileName+')' : ''}. Please review/edit as needed.`, 'success');
   }
 }
 
@@ -2794,7 +3933,7 @@ function vrPasteCiValues() {
   if (!vrWorkingRows) return;
   vrWorkingRows.forEach(r => { if (r.valueCI == null) r.valueCI = r.valuePO; });
   vrRenderReconTable();
-  showToast('Value CI diisi contoh (= Value PO). Silakan sesuaikan dengan data CI asli.', 'success');
+  showToast('Value CI filled with a placeholder (= Value PO). Please adjust to match the real CI data.', 'success');
 }
 
 // Manual re-pull button — useful if a CI Verification was saved *after* this
@@ -2803,7 +3942,7 @@ function vrPullFromCi() {
   if (!vrCurrentPoNumber || !vrWorkingRows) { showToast('Pilih PO terlebih dahulu.', 'error'); return; }
   const info = getCiAmountMapForPo(vrCurrentPoNumber);
   if (!Object.keys(info.map).length) {
-    showToast('Belum ada data Value CI dari Verifikasi CI untuk PO ini. Lakukan Verifikasi CI terlebih dahulu (kolom Amount/Value pada file CI).', 'warning');
+    showToast('No Value CI data yet from CI Verification for this PO. Please run CI Verification first (Amount/Value column in the CI file).', 'warning');
     return;
   }
   let count = 0;
@@ -2817,12 +3956,12 @@ function vrPullFromCi() {
     }
   });
   vrRenderReconTable();
-  if (count > 0) showToast(`✓ ${count} item Value CI ditarik dari Verifikasi CI${info.fileName ? ' ('+info.fileName+')' : ''}.`, 'success');
-  else showToast('Tidak ada SKU/nama yang cocok dengan data Verifikasi CI.', 'warning');
+  if (count > 0) showToast(`✓ ${count} Value CI item(s) pulled from CI Verification${info.fileName ? ' ('+info.fileName+')' : ''}.`, 'success');
+  else showToast('No SKU/name matches the CI Verification data.', 'warning');
 }
 
 function vrRowStatus(row) {
-  if (row.valueCI == null) return { status: 'pending', label: 'Belum diisi' };
+  if (row.valueCI == null) return { status: 'pending', label: 'Not filled in' };
   const diff = row.diff;
   if (Math.abs(diff) < 0.005) return { status: 'match', label: 'Match' };
   if (diff < 0) return { status: 'kurang', label: 'Kurang' };
@@ -2901,7 +4040,7 @@ function vrRenderReconTable() {
   tbody.innerHTML = vrWorkingRows.map((r, idx) => {
     const { status, label } = vrRowStatus(r);
     const fromCiTag = r.fromCi
-      ? `<span title="Diisi otomatis dari Verifikasi CI — boleh diedit" style="color:var(--c-blue-dark);font-size:12px;margin-left:4px;white-space:nowrap"><i class="ti ti-wand"></i></span>`
+      ? `<span title="Auto-filled from CI Verification — editable" style="color:var(--c-blue-dark);font-size:12px;margin-left:4px;white-space:nowrap"><i class="ti ti-wand"></i></span>`
       : '';
     return `
       <tr>
@@ -2928,7 +4067,7 @@ function vrRenderReconTable() {
 function vrSaveReconciliation() {
   if (!vrCurrentPoNumber || !vrWorkingRows) { showToast('Pilih PO terlebih dahulu.', 'error'); return; }
   if (vrWorkingRows.some(r => r.valueCI == null)) {
-    if (!confirm('Ada item yang Value CI-nya belum diisi. Tetap simpan rekonsiliasi ini?')) return;
+    if (!confirm('Some items still have no Value CI filled in. Save this reconciliation anyway?')) return;
   }
 
   const po = (MOCK_PO_DATA || []).find(p => p.poNumber === vrCurrentPoNumber);
@@ -2954,20 +4093,22 @@ function vrSaveReconciliation() {
 
   renderVrHistory();
   updateVrKpis();
+  logActivity(vrCurrentPoNumber, 'Value Reconciliation',
+    `Value PO ${fmt(totalValuePO)} vs CI ${fmt(totalValueCI)}, selisih ${fmt(totalDiff)} (${overallStatus})`);
   showToast('✓ Value Reconciliation berhasil disimpan!', 'success');
 
-  // Lanjutkan ke Payment Proof Matching untuk PO yang sama
+  // Continue to Payment Proof Matching for the same PO
   setTimeout(() => {
-    if (confirm('Rekonsiliasi berhasil disimpan. Lanjut ke Deteksi Payment Proof (cocokkan dengan bukti pembayaran) untuk PO ini?')) {
+    if (confirm('Reconciliation saved successfully. Continue to Payment Proof Detection (match against payment proof) for this PO?')) {
       goToPaymentMatchFromVr(record.poNumber, record.currency, record.brand);
     }
   }, 400);
 }
 
 // Dipanggil setelah Value Reconciliation disimpan — menyiapkan Payment Proof
-// Matching untuk PO yang baru saja direkonsiliasi (basis Value CI, mata uang
+// Matching for the PO that was just reconciled (basis: Value CI, currency
 // & brand ikut PO tsb) lalu scroll ke sana supaya user tinggal isi nominal
-// dari bukti pembayaran.
+// from the payment proof.
 function goToPaymentMatchFromVr(poNumber, currency, brand) {
   const basisEl = document.getElementById('pm-basis');
   if (basisEl) basisEl.value = 'ci';
@@ -2986,7 +4127,7 @@ function goToPaymentMatchFromVr(poNumber, currency, brand) {
   if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
   setTimeout(() => document.getElementById('pm-paid-value')?.focus(), 450);
 
-  showToast(`Basis "Value CI" & filter Payment Matching disiapkan untuk ${poNumber}. Masukkan nilai dari bukti pembayaran.`, 'success');
+  showToast(`Basis "Value CI" & Payment Matching filter prepared for ${poNumber}. Enter the value from the payment proof.`, 'success');
 }
 
 // ── History table ────────────────────────────────────────────
@@ -3006,7 +4147,7 @@ function renderVrHistory(filter = '', statusFilter = '') {
   );
 
   if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada rekonsiliasi tersimpan.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--c-text-hint)">No reconciliation saved yet.</td></tr>`;
     return;
   }
 
@@ -3038,7 +4179,7 @@ function vrFilterHistory() {
 function vrDeleteRecord(idx) {
   const r = VR_RECORDS[idx];
   if (!r) return;
-  if (!confirm(`Hapus rekonsiliasi untuk PO ${r.poNumber}?`)) return;
+  if (!confirm(`Delete the reconciliation for PO ${r.poNumber}?`)) return;
   VR_RECORDS.splice(idx, 1);
   renderVrHistory();
   updateVrKpis();
@@ -3115,7 +4256,7 @@ function updateVrKpis() {
   lebihEl.textContent  = nLebih;
 }
 // ══════════════════════════════════════════════════════════════
-// NIE CENTER — Auto-Matching NIE BPOM untuk SKI
+// NIE CENTER — Auto-Matching NIE BPOM for SKI
 // ══════════════════════════════════════════════════════════════
 
 // ── NIE Database (in-memory; production: SQLite/API) ──────────
@@ -3188,7 +4329,7 @@ function matchNie(ciItem) {
 
   results.sort((a,b) => b._score - a._score);
 
-  if (!results.length) return { status:'not-found', label:'Tidak Ditemukan', matches:[] };
+  if (!results.length) return { status:'not-found', label:'Not Found', matches:[] };
   if (results.length === 1 || results[0]._score === 100) return { status:'match', label:'Match', matches:results };
   return { status:'multiple', label:'Multiple Match', matches:results };
 }
@@ -3205,7 +4346,7 @@ function initNieCenter() {
   seedNieDemo();
   renderNieDb();
   renderNieResults();
-  // Init Google Drive (deferred — hanya load jika user buka tab NIE)
+  // Init Google Drive (deferred — only loads when the user opens the NIE tab)
   setTimeout(() => initGdrive(), 500);
 }
 
@@ -3225,11 +4366,11 @@ function renderNieDb(query = '') {
     <td style="font-family:monospace;font-size:11px">${n.sku||'—'}</td>
     <td style="font-size:12px;color:var(--c-text-hint)">${n.file_name||'—'}</td>
     <td><button class="btn-ghost btn-sm" onclick="nieDeleteRow(${i})" title="Hapus"><i class="ti ti-trash" style="color:#ef4444"></i></button></td>
-  </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--c-text-hint)">Belum ada data NIE.</td></tr>`;
+  </tr>`).join('') || `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--c-text-hint)">No NIE data yet.</td></tr>`;
 }
 
 function nieDeleteRow(idx) {
-  if (!confirm('Hapus NIE ini dari database?')) return;
+  if (!confirm('Delete this NIE from the database?')) return;
   NIE_DB.splice(idx,1);
   renderNieDb();
   showToast('NIE dihapus.','success');
@@ -3244,7 +4385,7 @@ function nieAddManual() {
   const sku  = document.getElementById('nie-add-sku')?.value.trim();
   const reff = document.getElementById('nie-add-reff')?.value.trim();
   const file = document.getElementById('nie-add-file')?.value.trim();
-  if (!nie || !name) { showToast('Nomor NIE dan Nama Produk wajib diisi.','error'); return; }
+  if (!nie || !name) { showToast('NIE Number and Product Name are required.','error'); return; }
   NIE_DB.push({ id: Date.now(), nie_number:nie, product_name:name, brand, variant:vari, sku, rev_code:reff, file_name:file, date_added: new Date().toISOString().slice(0,10) });
   ['nie-add-nie','nie-add-name','nie-add-brand','nie-add-variant','nie-add-sku','nie-add-reff','nie-add-file'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
   renderNieDb();
@@ -3293,7 +4434,7 @@ async function handleNieCiUpload(file) {
         }
       }
     } else {
-      // PDF: cek dulu apakah ini Surat Pengantar NIE (bukan CI biasa)
+      // PDF: first check whether this is an NIE Cover Letter (not a regular CI)
       const pdfText = await extractTextFromPdf(file);
       const suratResult = parseSuratPengantarNie(pdfText);
 
@@ -3352,16 +4493,16 @@ async function handleNieCiUpload(file) {
           ${newNies.length > 0 ? `
           <div style="margin-top:10px;padding-top:8px;font-size:12px;color:var(--c-green-dark,#15803d);font-weight:600">
             ✓ ${newNies.length} NIE baru berhasil ditambahkan ke database
-          </div>` : `<div style="margin-top:8px;font-size:12px;color:var(--c-text-hint)">Semua NIE sudah ada di database.</div>`}
+          </div>` : `<div style="margin-top:8px;font-size:12px;color:var(--c-text-hint)">All NIEs are already in the database.</div>`}
           ${newNies.length > 0 ? `
           <button class="btn-primary btn-sm" style="margin-top:10px" onclick="gdriveSearchByNieNumbers(${JSON.stringify(suratResult.items.map(i=>i.nie_number))})">
-            <i class="ti ti-brand-google-drive"></i> Cari File NIE ini di Google Drive
+            <i class="ti ti-brand-google-drive"></i> Search for This NIE File in Google Drive
           </button>` : ''}`;
         document.getElementById('nie-ci-drop').appendChild(panel);
 
         showToast(`✓ Surat Pengantar: ${suratResult.items.length} NIE — ${newNies.length} ditambah ke DB`, 'success');
 
-        // ── Auto-search Google Drive jika sudah login ──────────
+        // ── Auto-search Google Drive if already logged in ──────────
         if (gdriveAccessToken) {
           const nieNumbers = suratResult.items.map(i => i.nie_number).filter(Boolean);
           if (nieNumbers.length) {
@@ -3376,10 +4517,10 @@ async function handleNieCiUpload(file) {
             setTimeout(() => gdriveSearchByNieNumbers(nieNumbers), 600);
           }
         } else {
-          // Belum login: simpan ke pending, scroll ke gdrive panel, minta user login
+          // Not logged in yet: save to pending, scroll to the gdrive panel, prompt user to log in
           const nieNumbers = suratResult.items.map(i => i.nie_number).filter(Boolean);
           gdrivePendingNieSearch = nieNumbers;
-          showToast('Login Google Drive untuk cari file NIE otomatis. Hasil akan muncul setelah login.', 'warning');
+          showToast('Log in to Google Drive to search for NIE files automatically. Results will appear after logging in.', 'warning');
           const driveCard = document.getElementById('gdrive-panel');
           if (driveCard) {
             driveCard.style.display = 'block';
@@ -3400,7 +4541,7 @@ async function handleNieCiUpload(file) {
       }
     }
 
-    if (!ciItems.length) { showToast('Tidak ada item yang terbaca dari CI.','error'); return; }
+    if (!ciItems.length) { showToast('No items could be read from the CI.','error'); return; }
 
     // Run matching
     NIE_MATCH_RESULTS = ciItems.map(item => {
@@ -3436,7 +4577,7 @@ function renderNieResults(filterStatus = '') {
   if (!tbody) return;
   const rows = filterStatus ? NIE_MATCH_RESULTS.filter(r=>r.status===filterStatus) : NIE_MATCH_RESULTS;
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--c-text-hint)">Upload CI untuk melihat hasil matching NIE.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--c-text-hint)">Upload a CI to see the NIE matching results.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map((r,i) => {
@@ -3502,12 +4643,12 @@ function nieCopyAllNie() {
     return;
   }
   const matched = NIE_MATCH_RESULTS.filter(r=>r.topMatch).map(r=>r.topMatch.nie_number);
-  if (!matched.length) { showToast('Belum ada NIE. Upload SKI atau paste NIE terlebih dahulu.','error'); return; }
+  if (!matched.length) { showToast('No NIEs yet. Upload an SKI or paste NIEs first.','error'); return; }
   navigator.clipboard.writeText(matched.join('\n')).then(()=>showToast(`${matched.length} Nomor NIE disalin.`,'success'));
 }
 
 function nieExportExcel() {
-  if (!NIE_MATCH_RESULTS.length) { showToast('Tidak ada data untuk diekspor.','error'); return; }
+  if (!NIE_MATCH_RESULTS.length) { showToast('No data to export.','error'); return; }
   const data = [['SKU/Rev Code','Nama Produk CI','Qty','Nomor NIE','Nama Produk NIE','Status','File NIE','Metode Match']];
   NIE_MATCH_RESULTS.forEach(r => {
     data.push([r.sku||'', r.name||'', r.qty||0, r.topMatch?.nie_number||'NOT FOUND', r.topMatch?.product_name||'', r.label||r.status, r.topMatch?.file_name||'', r.topMatch?._method||'']);
@@ -3530,29 +4671,29 @@ function nieSearchDb() {
 }
 
 // ── Parser Surat Pengantar NIE (format surat resmi SBI) ──────
-// Dokumen: surat permohonan ke BPOM dengan tabel berisi kolom "No. Notifikasi"
+// Document: application letter to BPOM with a table containing a "No. Notifikasi" column
 // Contoh kolom: No | Nama Produk | Kemasan | No Bets | Jumlah | No Invoice | Negara | No HS | Nilai | No. Notifikasi
 function parseSuratPengantarNie(pdfText) {
   const lines = pdfText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const results = [];
 
-  // Deteksi apakah ini format Surat Pengantar: cari keyword khas
+  // Detect whether this is a Cover Letter format: look for a distinctive keyword
   const isSuratPengantar =
     /Surat\s*Keterangan\s*Impor/i.test(pdfText) ||
     /Permohonan\s*Surat\s*Keterangan\s*Impor/i.test(pdfText) ||
     /No\.\s*Notifikasi/i.test(pdfText) ||
     /Badan\s*Pengawas(an)?\s*Obat\s*dan\s*Makanan/i.test(pdfText);
 
-  if (!isSuratPengantar) return null; // bukan format ini
+  if (!isSuratPengantar) return null; // not this format
 
-  // Cari blok tabel: identifikasi baris yang mengandung nomor NIE (pola NAxxxxxxxx)
+  // Find the table block: identify rows containing an NIE number (pattern NAxxxxxxxx)
   // NIE BPOM pola: NA + 11 digit angka, e.g. NA22210200046
   const niePattern = /\b(NA\d{11,14})\b/g;
   const allNieMatches = [...pdfText.matchAll(niePattern)];
   const uniqueNie = [...new Set(allNieMatches.map(m => m[1]))];
 
-  // Untuk setiap NIE, cari nama produk terdekat di baris sebelumnya
-  // Strategy: scan baris-baris untuk menemukan tabel
+  // For each NIE, find the nearest product name in the preceding rows
+  // Strategy: scan the rows to find the table
   let tableStartIdx = -1;
   let headerCols = [];
   const COL_KEYWORDS = ['nama produk', 'no notifikasi', 'notifikasi', 'nilai', 'jumlah', 'kemasan', 'no hs', 'invoice'];
@@ -3570,29 +4711,29 @@ function parseSuratPengantarNie(pdfText) {
 
   if (tableStartIdx >= 0 && uniqueNie.length > 0) {
     // Parse baris data tabel setelah header
-    // Di Surat Pengantar, setiap baris produk ada: no, nama produk, kemasan, no bets, jumlah, no invoice, negara, no hs, nilai, NIE
+    // In the Cover Letter, each product row has: no, product name, packaging, batch no, quantity, invoice no, country, HS no, value, NIE
     // PDF extractor sering memisah kolom per baris, jadi kita scan area tabel
     const tableLines = lines.slice(tableStartIdx + 1);
     let currentProduct = null;
     let productBuffer = [];
 
     tableLines.forEach(line => {
-      // Cek apakah baris ini adalah nomor baris tabel (starts with digit)
+      // Check whether this row is a table row number (starts with digit)
       const rowNumMatch = line.match(/^(\d+)$/);
       const nieMatch = line.match(/(NA\d{11,14})/);
       const qtyMatch = line.match(/^\d{1,5}$/);
       const valueMatch = line.match(/^[¥¢][\d.,]+$/);
       const hsMatch = line.match(/^\d{4}\.\d{2}\.\d{2}/);
 
-      // Nama produk: baris yang bukan angka murni, bukan kode, cukup panjang
+      // Product name: a row that isn't a pure number, isn't a code, and is long enough
       const isProductName = line.length > 3 && !/^\d+$/.test(line) && !nieMatch && !hsMatch && !valueMatch;
 
       productBuffer.push(line);
 
-      // Ketika kita temukan NIE di baris ini, kumpulkan data
+      // When we find an NIE on this row, collect the data
       if (nieMatch) {
         const nie_number = nieMatch[1];
-        // Cari nama produk dari buffer: cari baris yang paling mungkin nama produk
+        // Find the product name from the buffer: find the row most likely to be a product name
         const productLine = productBuffer
           .slice(-8) // 8 baris terakhir sebelum NIE
           .filter(l => l.length > 3 && !/^\d+$/.test(l) && !/(NA\d{11})/.test(l) && !/^[¥¢]/.test(l) && !/^\d{4}\.\d{2}/.test(l) && !/^Japan|China|Korea/i.test(l) && !/^IZ-SO/i.test(l))
@@ -3619,7 +4760,7 @@ function parseSuratPengantarNie(pdfText) {
       }
     });
 
-    // Fallback: jika tidak bisa parse tabel dengan benar, gunakan NIE yang ditemukan saja
+    // Fallback: if the table can't be parsed properly, just use the NIEs that were found
     if (!results.length && uniqueNie.length > 0) {
       uniqueNie.forEach(nie => results.push({ nie_number: nie, product_name: '', qty: 0 }));
     }
@@ -3648,12 +4789,12 @@ function parseSuratPengantarNie(pdfText) {
 // User cukup login Google sekali, lalu sistem bisa search file NIE di Drive
 // ══════════════════════════════════════════════════════════════
 
-// Config — isi dengan Google Cloud Project credentials Anda
-// Untuk setup: https://console.cloud.google.com → Enable Drive API + Picker API
+// Config — fill in with your Google Cloud Project credentials
+// For setup: https://console.cloud.google.com → Enable Drive API + Picker API
 const GDRIVE_CONFIG = {
-  // Ganti dengan Client ID dari Google Cloud Console Anda
+  // Replace with the Client ID from your Google Cloud Console
   CLIENT_ID: '48077672390-etdopmmsuhucb3j1o6gu5erdi9iaehan.apps.googleusercontent.com',  // e.g. '123456789-xxxxx.apps.googleusercontent.com'
-  // API Key untuk Drive API (public, bukan secret)
+  // API Key for the Drive API (public, not secret)
   API_KEY: 'AIzaSyAYDAGPmseu6YfNbXlOZhgG6SlvlbiHHgY',    // e.g. 'AIzaSyXXXXXXXXXXXXXXXXXXX'
   SCOPES: 'https://www.googleapis.com/auth/drive.readonly',
   DISCOVERY_DOCS: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
@@ -3663,14 +4804,14 @@ let gdriveTokenClient = null;
 let gdriveAccessToken = null;
 let gdriveInitialized = false;
 let gdriveSearchResults = []; // [{id, name, mimeType, webViewLink, modifiedTime}]
-let gdriveSelectedFiles = new Set(); // file IDs yang dipilih untuk download
-let gdrivePendingNieSearch = null; // NIE numbers dari upload surat pengantar yg belum dicari (tunggu login)
+let gdriveSelectedFiles = new Set(); // file IDs selected for download
+let gdrivePendingNieSearch = null; // NIE numbers from the cover-letter upload not yet searched (waiting for login)
 
 // ── Init Google Drive ─────────────────────────────────────────
 async function initGdrive() {
   if (!GDRIVE_CONFIG.CLIENT_ID || !GDRIVE_CONFIG.API_KEY) {
-    showToast('Google Drive belum dikonfigurasi. Isi CLIENT_ID dan API_KEY di app.js.', 'warning');
-    document.getElementById('gdrive-status-badge').textContent = '⚠ Belum Dikonfigurasi';
+    showToast('Google Drive is not configured yet. Fill in CLIENT_ID and API_KEY in app.js.', 'warning');
+    document.getElementById('gdrive-status-badge').textContent = '⚠ Not Configured';
     document.getElementById('gdrive-status-badge').className = 'badge badge-orange';
     return;
   }
@@ -3702,7 +4843,7 @@ async function initGdrive() {
     });
 
     gdriveInitialized = true;
-    document.getElementById('gdrive-status-badge').textContent = '○ Belum Login';
+    document.getElementById('gdrive-status-badge').textContent = '○ Not Logged In';
     document.getElementById('gdrive-status-badge').className = 'badge badge-gray';
     document.getElementById('gdrive-connect-btn').style.display = 'inline-flex';
   } catch (err) {
@@ -3735,7 +4876,7 @@ function gdriveLogout() {
   updateGdriveStatus(false);
   gdriveSearchResults = [];
   renderGdriveResults([]);
-  showToast('Logout dari Google Drive.', 'success');
+  showToast('Logged out of Google Drive.', 'success');
 }
 
 function updateGdriveStatus(connected) {
@@ -3750,7 +4891,7 @@ function updateGdriveStatus(connected) {
     if (connectBtn) connectBtn.style.display = 'none';
     if (logoutBtn)  logoutBtn.style.display  = 'inline-flex';
     if (searchCard) searchCard.style.display = 'block';
-    // Jika ada pending NIE search dari upload surat pengantar sebelumnya, jalankan sekarang
+    // If there's a pending NIE search from a previous cover-letter upload, run it now
     if (gdrivePendingNieSearch && gdrivePendingNieSearch.length) {
       const pending = gdrivePendingNieSearch;
       gdrivePendingNieSearch = null;
@@ -3758,7 +4899,7 @@ function updateGdriveStatus(connected) {
       setTimeout(() => gdriveSearchByNieNumbers(pending), 400);
     }
   } else {
-    badge.textContent = '○ Belum Login';
+    badge.textContent = '○ Not Logged In';
     badge.className = 'badge badge-gray';
     if (connectBtn) connectBtn.style.display = 'inline-flex';
     if (logoutBtn)  logoutBtn.style.display  = 'none';
@@ -3767,11 +4908,11 @@ function updateGdriveStatus(connected) {
 }
 
 // ── Manual search: cari file selain NIE ───────────────────────
-// Sama alurnya dengan box paste-NIE di atas (textarea multi-baris + status
+// Same flow as the paste-NIE box above (multi-line textarea + status
 // per baris), bedanya di sini kata kunci bebas (nama produk, invoice, dll)
-// dan tidak dibatasi pola nomor NIE. Satu kata kunci bisa menghasilkan lebih
-// dari 1 file, jadi hasilnya ditampung ke tabel gdrive-results yang sudah
-// ada supaya user bisa pilih mana yang mau di-ZIP.
+// and isn't restricted to the NIE-number pattern. One keyword may yield more
+// from 1 file, so the results are collected into the gdrive-results table that's
+// exists so the user can choose which ones to ZIP.
 // Extracts a Drive folder ID from a pasted folder link, e.g.:
 //   https://drive.google.com/drive/folders/1AbCdEfGhIjKlmnOPQRstuvWXyz?usp=sharing
 //   https://drive.google.com/drive/u/0/folders/1AbCdEfGhIjKlmnOPQRstuvWXyz
@@ -3809,7 +4950,7 @@ function renderGdriveManualChips(terms, statusByTerm) {
     if (statusByTerm) {
       const n = statusByTerm[term];
       if (n > 0)      statusHtml = `<span style="color:#16a34a;font-weight:600">✓ ${n} file</span>`;
-      else if (n === 0) statusHtml = `<span style="color:#dc2626">✗ tidak ada</span>`;
+      else if (n === 0) statusHtml = `<span style="color:#dc2626">✗ none</span>`;
       else            statusHtml = `<span style="color:#dc2626">✗ error</span>`;
     }
     return `<div style="display:inline-flex;align-items:center;gap:6px;background:var(--c-surface-2);border:0.5px solid var(--c-border);border-radius:6px;padding:5px 10px;font-size:12px">
@@ -3879,7 +5020,7 @@ async function gdriveManualSearchAndZip() {
         await gapi.client.drive.files.get({ fileId: directId, fields: 'id,name,mimeType', supportsAllDrives: true });
         rootIds = [directId];
       } catch (e) {
-        showToast('Link/ID folder tidak valid atau tidak bisa diakses — pencarian dilakukan di semua folder.', 'warning');
+        showToast('Folder link/ID is invalid or inaccessible — searching across all folders instead.', 'warning');
       }
     } else {
       try {
@@ -3889,7 +5030,7 @@ async function gdriveManualSearchAndZip() {
           supportsAllDrives: true, includeItemsFromAllDrives: true, corpora: 'allDrives',
         });
         rootIds = (fr.result.files || []).map(f => f.id);
-        if (!rootIds.length) showToast(`Folder "${folderQ}" tidak ditemukan — pencarian dilakukan di semua folder.`, 'warning');
+        if (!rootIds.length) showToast(`Folder "${folderQ}" not found — searching across all folders instead.`, 'warning');
       } catch (e) { /* ignore, search without folder restriction */ }
     }
 
@@ -3933,16 +5074,16 @@ async function gdriveManualSearchAndZip() {
   renderGdriveResults(files);
 
   const termsWithHits = terms.filter(t => (statusByTerm[t] || 0) > 0).length;
-  if (!files.length) showToast('Tidak ada file yang ditemukan untuk kata kunci tersebut.', 'warning');
-  else showToast(`✓ ${files.length} file ditemukan dari ${termsWithHits}/${terms.length} kata kunci. Pilih file di bawah untuk didownload ZIP.`, 'success');
+  if (!files.length) showToast('No files found for that keyword.', 'warning');
+  else showToast(`✓ ${files.length} file(s) found from ${termsWithHits}/${terms.length} keywords. Select files below to download as a ZIP.`, 'success');
 
   document.getElementById('gdrive-results')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// ── Search NIE by nomor NIE dari hasil matching ───────────────
+// ── Search NIE by NIE number from matching results ───────────────
 async function gdriveSearchByNieNumbers(nieNumbers) {
-  if (!gdriveAccessToken) { showToast('Login ke Google Drive dulu untuk cari file NIE.', 'warning'); return; }
-  if (!nieNumbers || !nieNumbers.length) { showToast('Tidak ada nomor NIE untuk dicari.', 'warning'); return; }
+  if (!gdriveAccessToken) { showToast('Please log in to Google Drive first to search for NIE files.', 'warning'); return; }
+  if (!nieNumbers || !nieNumbers.length) { showToast('No NIE numbers to search for.', 'warning'); return; }
 
   showToast(`Mencari ${nieNumbers.length} file NIE di Google Drive...`, '');
   const loadEl = document.getElementById('gdrive-search-loading');
@@ -3963,7 +5104,7 @@ async function gdriveSearchByNieNumbers(nieNumbers) {
       });
       const files = (resp.result.files || [])
         .filter(f => !/qr/i.test(f.name)); // skip file QR
-      if (files.length) found.push({ ...files[0], _nie_number: nie }); // ambil yg terbaru saja
+      if (files.length) found.push({ ...files[0], _nie_number: nie }); // take only the most recent one
     } catch (e) { /* skip failed NIE */ }
   }
 
@@ -3971,10 +5112,10 @@ async function gdriveSearchByNieNumbers(nieNumbers) {
   renderGdriveResults(found);
 
   if (loadEl) loadEl.style.display = 'none';
-  if (!found.length) showToast('Tidak ada file NIE ditemukan di Drive.', 'warning');
+  if (!found.length) showToast('No NIE files found in Drive.', 'warning');
   else showToast(`✓ Ditemukan ${found.length} file NIE.`, 'success');
 
-  // Pastikan gdrive-search-card visible (butuh saat auto-search dari upload)
+  // Make sure gdrive-search-card is visible (needed during auto-search from upload)
   const searchCard = document.getElementById('gdrive-search-card');
   if (searchCard) searchCard.style.display = 'block';
 
@@ -3998,7 +5139,7 @@ function renderGdriveResults(files) {
   if (countEl) countEl.textContent = files.length ? `${files.length} file ditemukan` : '';
 
   if (!files.length) {
-    container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--c-text-hint)">Belum ada hasil pencarian.</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:32px;color:var(--c-text-hint)">No search results yet.</div>`;
     return;
   }
 
@@ -4062,7 +5203,7 @@ function gdriveSelectAll(checked) {
   if (countEl) countEl.textContent = gdriveSelectedFiles.size;
 }
 
-// ── Download single file dari Drive ──────────────────────────
+// ── Download a single file from Drive ──────────────────────────
 async function gdriveDownloadSingle(fileId, fileName) {
   if (!gdriveAccessToken) { showToast('Login ke Google Drive dulu.', 'warning'); return; }
   try {
@@ -4084,10 +5225,10 @@ async function gdriveDownloadSingle(fileId, fileName) {
   }
 }
 
-// ── Download selected files sebagai ZIP ──────────────────────
+// ── Download selected files as a ZIP ──────────────────────
 async function gdriveDownloadSelected() {
   if (!gdriveAccessToken) { showToast('Login ke Google Drive dulu.', 'warning'); return; }
-  if (!gdriveSelectedFiles.size) { showToast('Pilih minimal 1 file untuk didownload.', 'warning'); return; }
+  if (!gdriveSelectedFiles.size) { showToast('Select at least 1 file to download.', 'warning'); return; }
 
   // Check if JSZip is available
   if (typeof JSZip === 'undefined') {
@@ -4173,7 +5314,7 @@ async function niePasteProcess() {
   const nies = parsePastedNie(raw);
 
   if (!nies.length) {
-    showToast('Tidak ada nomor NIE yang terdeteksi. Format: NA diikuti angka, satu per baris.', 'error');
+    showToast('No NIE numbers detected. Format: NA followed by numbers, one per line.', 'error');
     return;
   }
 
@@ -4197,7 +5338,7 @@ async function niePasteProcess() {
   // Render chip panel
   renderPastedNiePanel(nies);
 
-  showToast(`${nies.length} NIE terdeteksi. Klik "Cari & Download ZIP" untuk mengunduh.`, 'success');
+  showToast(`${nies.length} NIE(s) detected. Click "Search & Download ZIP" to download.`, 'success');
 }
 
 // Render the chip panel with all NIEs
@@ -4213,7 +5354,7 @@ function renderPastedNiePanel(nies) {
   panel.innerHTML = `
     <div class="form-card-title">
       <i class="ti ti-list-numbers"></i>
-      <span>NIE dari Input Manual</span>
+      <span>NIE from Manual Input</span>
       <span class="badge badge-blue" style="margin-left:8px;font-size:12px">${nies.length} NIE</span>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-ghost btn-sm" onclick="nieCopyAllNie()">
@@ -4263,7 +5404,7 @@ function updateNieChips(foundSet) {
 // Main download entry point — tries Google Drive first, then local server
 async function nieDownloadZipFromPaste() {
   const nies = window.NIE_SKI_ITEMS.map(i => i.nie_number).filter(Boolean);
-  if (!nies.length) { showToast('Tidak ada NIE. Paste nomor NIE terlebih dahulu.', 'error'); return; }
+  if (!nies.length) { showToast('No NIEs. Please paste NIE numbers first.', 'error'); return; }
 
   const btn = document.getElementById('nie-paste-dl-btn');
   const setBtn = (label, disabled=true) => {
@@ -4287,7 +5428,7 @@ async function nieDownloadZipFromPaste() {
     if (ping.ok) {
       const st = await ping.json();
       if (!st.indexed_files) {
-        showToast('Server jalan tapi belum ada file terindeks. Klik "Scan Folder" dulu di server.', 'warning');
+        showToast('Server is running but no files are indexed yet. Click "Scan Folder" on the server first.', 'warning');
         setBtn('<i class="ti ti-download"></i> Cari &amp; Download ZIP', false);
         return;
       }
@@ -4299,7 +5440,7 @@ async function nieDownloadZipFromPaste() {
 
   // ── Option 3: Neither available ───────────────────────────
   setBtn('<i class="ti ti-download"></i> Cari &amp; Download ZIP', false);
-  showToast('Login Google Drive (klik tombol Login Google Drive) atau jalankan nie_server_setup.bat di komputer Anda.', 'error');
+  showToast('Log in to Google Drive (click the Login Google Drive button) or run nie_server_setup.bat on your computer.', 'error');
 
   // Highlight the login button to guide user
   const loginBtn = document.getElementById('gdrive-connect-btn');
@@ -4360,12 +5501,12 @@ async function gdriveSearchAndZipNies(nies) {
     summEl.style.display = 'block';
     summEl.innerHTML = `
       <span class="badge badge-green" style="margin-right:8px">✓ ${foundSet.size} ditemukan</span>
-      ${notFound.length ? `<span class="badge badge-red" style="margin-right:8px">✗ ${notFound.length} tidak ditemukan</span>` : ''}
-      ${notFound.length ? `<div style="margin-top:6px;font-size:12px;color:var(--c-text-hint)">Tidak ditemukan: ${notFound.join(', ')}</div>` : ''}`;
+      ${notFound.length ? `<span class="badge badge-red" style="margin-right:8px">✗ ${notFound.length} not found</span>` : ''}
+      ${notFound.length ? `<div style="margin-top:6px;font-size:12px;color:var(--c-text-hint)">Not found: ${notFound.join(', ')}</div>` : ''}`;
   }
 
   if (!foundFiles.length) {
-    showToast('Tidak ada file NIE yang ditemukan di Google Drive.', 'error');
+    showToast('No NIE files found in Google Drive.', 'error');
     return;
   }
 
@@ -4385,7 +5526,7 @@ async function gdriveSearchAndZipNies(nies) {
       driveCard.style.display = 'block';
       driveCard.scrollIntoView({ behavior:'smooth', block:'start' });
     }
-    showToast(`${foundFiles.length} file ditemukan. Scroll ke bawah untuk download ZIP.`, 'success');
+    showToast(`${foundFiles.length} file(s) found. Scroll down to download the ZIP.`, 'success');
   }
 }
 
@@ -4411,12 +5552,12 @@ async function nieServerSearchAndZip(nies) {
     summEl.style.display = 'block';
     summEl.innerHTML = `
       <span class="badge badge-green" style="margin-right:8px">✓ ${foundSet.size} ditemukan</span>
-      ${notFound.length ? `<span class="badge badge-red" style="margin-right:8px">✗ ${notFound.length} tidak ditemukan</span>` : ''}
-      ${notFound.length ? `<div style="margin-top:6px;font-size:12px;color:var(--c-text-hint)">Tidak ada di folder: ${notFound.join(', ')}</div>` : ''}`;
+      ${notFound.length ? `<span class="badge badge-red" style="margin-right:8px">✗ ${notFound.length} not found</span>` : ''}
+      ${notFound.length ? `<div style="margin-top:6px;font-size:12px;color:var(--c-text-hint)">Not in folder: ${notFound.join(', ')}</div>` : ''}`;
   }
 
   if (!foundSet.size) {
-    showToast('Tidak ada file NIE ditemukan di folder. Pastikan folder sudah di-scan.', 'error');
+    showToast('No NIE files found in the folder. Make sure the folder has been scanned.', 'error');
     return;
   }
 
@@ -4446,4 +5587,464 @@ async function nieServerSearchAndZip(nies) {
 
   const cnt = zr.headers.get('X-File-Count') || foundSet.size;
   showToast(`✓ ZIP downloaded: ${cnt} file NIE (${zipName})`, 'success');
+}
+
+// ═══════════════════════════════════════════════════════
+// GENERATE DOCUMENT — export helper (HTML → Word .doc)
+// No external template needed: wraps formatted HTML in a
+// minimal Word-compatible shell and downloads it as .doc,
+// which Word/LibreOffice opens natively.
+// ═══════════════════════════════════════════════════════
+function downloadHtmlAsWord(filename, bodyHtml) {
+  const shell = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+  <head><meta charset="utf-8">
+  <style>
+    @page { size: 21cm 29.7cm; margin: 2.5cm 2.5cm 2.5cm 3cm; }
+    body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5; color:#000; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+    td, th { border: 1px solid #000; padding: 5px 8px; font-size: 10.5pt; vertical-align: top; }
+    th { background: #eee; font-weight: bold; text-align:center; }
+    .center { text-align: center; }
+    .right  { text-align: right; }
+    .bold   { font-weight: bold; }
+    .underline { text-decoration: underline; }
+    .letterhead { text-align:center; margin-bottom: 6px; }
+    .letterhead .co-name { font-size: 14pt; font-weight: bold; letter-spacing: .5px; }
+    .letterhead .co-addr { font-size: 10pt; }
+    hr { border: none; border-top: 2px solid #000; margin: 4px 0 16px; }
+    .sig-block { margin-top: 40px; }
+    .sig-name  { margin-top: 60px; font-weight: bold; text-decoration: underline; }
+  </style></head>
+  <body>${bodyHtml}</body></html>`;
+  const blob = new Blob(['\ufeff', shell], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename.endsWith('.doc') ? filename : filename + '.doc';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const IMPORTER_LETTERHEAD = {
+  name: 'PT SOCIAL BELLA INDONESIA',
+  addr1: 'Jl. Radio Dalam Raya No. 5, Gandaria Utara,',
+  addr2: 'Kebayoran Baru, Jakarta Selatan 12140',
+};
+
+// Surat Kuasa is generated from a specific shipment record — reuse the
+// existing feature on Upcoming Shipment instead of a separate blank form.
+function goToSuratKuasaFromShipment() {
+  switchTab('shipment');
+  showToast('Select a shipment, then click the "Surat Kuasa" button on the matching row.', 'success');
+  setTimeout(() => {
+    const list = document.getElementById('shipment-list');
+    if (list) list.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 200);
+}
+
+// ── Surat Kuasa (Power of Attorney) — Custom & Pengambilan DO ──
+function openSkExportModal(shipmentIdx) {
+  const modal = document.getElementById('sk-export-modal');
+  if (!modal) return;
+  const s = (typeof shipmentIdx === 'number' && typeof MOCK_SHIPMENTS !== 'undefined') ? MOCK_SHIPMENTS[shipmentIdx] : null;
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null && val !== '') el.value = val; };
+
+  // Pemberi Kuasa — default to the importer's own letterhead
+  set('sk-tanggal', new Date().toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }));
+  set('sk-nama-perusahaan', IMPORTER_LETTERHEAD.name);
+  set('sk-alamat-1', IMPORTER_LETTERHEAD.addr1);
+  set('sk-alamat-2', IMPORTER_LETTERHEAD.addr2);
+
+  // Penerima Kuasa — default PPJK partner: Logwin
+  set('sk-nama-penerima', 'PT LOGWIN INDONESIA');
+  set('sk-nama-penerima-signer', document.getElementById('sk-nama-penerima-signer')?.value || '');
+
+  // Shipment-derived fields, if a row was picked
+  if (s) {
+    set('sk-vessel', s.vessel);
+    set('sk-bl-no-tgl', s.noBl ? `${s.noBl}${s.etd ? ' & ' + fmtDate(s.etd) : ''}` : '');
+    set('sk-shipper', s.brand);
+    set('sk-quantity', s.containerType);
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeSkExportModal() {
+  const modal = document.getElementById('sk-export-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function generateSuratKuasaDocx() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+
+  const required = ['sk-tanggal','sk-no-surat-custom','sk-no-surat-do','sk-nama-pemberi','sk-jabatan-pemberi',
+    'sk-nama-perusahaan','sk-npwp-pemberi','sk-telepon','sk-nama-penerima','sk-npwp-penerima','sk-pimpinan-ppjk',
+    'sk-nama-penerima-signer','sk-bl-no-tgl','sk-vessel','sk-shipper','sk-invoice-no','sk-total-invoice',
+    'sk-quantity','sk-jenis-barang'];
+  const missing = required.filter(id => !v(id));
+  if (missing.length) {
+    showToast(`Lengkapi dulu ${missing.length} field wajib (*) sebelum generate.`, 'error');
+    return;
+  }
+
+  const data = {
+    tanggal: v('sk-tanggal'), noSuratCustom: v('sk-no-surat-custom'), noSuratDo: v('sk-no-surat-do'),
+    namaPemberi: v('sk-nama-pemberi'), jabatanPemberi: v('sk-jabatan-pemberi'), namaPerusahaan: v('sk-nama-perusahaan'),
+    npwpPemberi: v('sk-npwp-pemberi'), telepon: v('sk-telepon'),
+    alamat: [v('sk-alamat-1'), v('sk-alamat-2'), v('sk-alamat-3')].filter(Boolean).join(', '),
+    namaPenerima: v('sk-nama-penerima'), npwpPenerima: v('sk-npwp-penerima'), pimpinanPpjk: v('sk-pimpinan-ppjk'),
+    alamatPenerima: v('sk-alamat-penerima'), namaPenerimaSigner: v('sk-nama-penerima-signer'),
+    blNoTgl: v('sk-bl-no-tgl'), vessel: v('sk-vessel'), shipper: v('sk-shipper'), invoiceNo: v('sk-invoice-no'),
+    totalInvoice: v('sk-total-invoice'), quantity: v('sk-quantity'), jenisBarang: v('sk-jenis-barang'),
+  };
+
+  const letterBody = (noSurat, perihal, uraian) => `
+    <div class="letterhead">
+      <div class="co-name">${data.namaPerusahaan}</div>
+      <div class="co-addr">${data.alamat}${data.telepon ? ' &nbsp;|&nbsp; Telp: ' + data.telepon : ''}</div>
+    </div>
+    <hr/>
+    <p>Nomor&nbsp;&nbsp;&nbsp;: ${noSurat}<br/>Perihal&nbsp;: <span class="bold">${perihal}</span></p>
+    <p class="center bold underline" style="margin:24px 0 16px;font-size:13pt;">SURAT KUASA</p>
+    <p>Yang bertanda tangan di bawah ini:</p>
+    <table style="border:none;margin-bottom:14px;">
+      <tr><td style="border:none;width:150px;padding:2px 0;">Nama</td><td style="border:none;padding:2px 0;">: ${data.namaPemberi}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Jabatan</td><td style="border:none;padding:2px 0;">: ${data.jabatanPemberi}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Perusahaan</td><td style="border:none;padding:2px 0;">: ${data.namaPerusahaan}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">NPWP</td><td style="border:none;padding:2px 0;">: ${data.npwpPemberi}</td></tr>
+    </table>
+    <p>Dalam hal ini bertindak untuk dan atas nama <span class="bold">${data.namaPerusahaan}</span>, selanjutnya disebut <span class="bold">PEMBERI KUASA</span>.</p>
+    <p>Dengan ini memberikan kuasa kepada:</p>
+    <table style="border:none;margin-bottom:14px;">
+      <tr><td style="border:none;width:150px;padding:2px 0;">Nama Perusahaan</td><td style="border:none;padding:2px 0;">: ${data.namaPenerima}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">NPWP</td><td style="border:none;padding:2px 0;">: ${data.npwpPenerima}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Pimpinan</td><td style="border:none;padding:2px 0;">: ${data.pimpinanPpjk}</td></tr>
+      ${data.alamatPenerima ? `<tr><td style="border:none;padding:2px 0;">Alamat</td><td style="border:none;padding:2px 0;">: ${data.alamatPenerima}</td></tr>` : ''}
+      <tr><td style="border:none;padding:2px 0;">Diwakili oleh</td><td style="border:none;padding:2px 0;">: ${data.namaPenerimaSigner}</td></tr>
+    </table>
+    <p>Selanjutnya disebut <span class="bold">PENERIMA KUASA</span>, untuk ${uraian}</p>
+    <table style="border:none;margin-bottom:14px;">
+      <tr><td style="border:none;width:150px;padding:2px 0;">BL No. &amp; Tanggal</td><td style="border:none;padding:2px 0;">: ${data.blNoTgl}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Vessel</td><td style="border:none;padding:2px 0;">: ${data.vessel}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Shipper</td><td style="border:none;padding:2px 0;">: ${data.shipper}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Invoice No.</td><td style="border:none;padding:2px 0;">: ${data.invoiceNo}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Total Invoice</td><td style="border:none;padding:2px 0;">: ${data.totalInvoice}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Quantity</td><td style="border:none;padding:2px 0;">: ${data.quantity}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Jenis Barang</td><td style="border:none;padding:2px 0;">: ${data.jenisBarang}</td></tr>
+    </table>
+    <p>Demikian surat kuasa ini dibuat untuk dapat dipergunakan sebagaimana mestinya.</p>
+    <table style="border:none;margin-top:24px;">
+      <tr>
+        <td style="border:none;width:50%;">
+          <p>PENERIMA KUASA,</p>
+          <p class="sig-name">${data.namaPenerimaSigner}</p>
+        </td>
+        <td style="border:none;width:50%;">
+          <p>Jakarta, ${data.tanggal}<br/>PEMBERI KUASA,</p>
+          <p class="sig-name">${data.namaPemberi}</p>
+        </td>
+      </tr>
+    </table>
+    <p style="page-break-after: always;"></p>
+  `;
+
+  const body = letterBody(data.noSuratCustom, 'Kuasa Pengurusan Dokumen Kepabeanan (Custom Clearance)',
+      'mengurus segala dokumen dan proses kepabeanan (custom clearance) atas nama Pemberi Kuasa, dengan data barang sebagai berikut:')
+    + letterBody(data.noSuratDo, 'Kuasa Pengambilan Delivery Order (DO)',
+      'mengambil Delivery Order (DO) di pelayaran/shipping line atas nama Pemberi Kuasa, dengan data barang sebagai berikut:');
+
+  downloadHtmlAsWord(`Surat_Kuasa_${data.noSuratCustom.replace(/[^\w]+/g,'_')}`, body);
+  showToast('✓ Surat Kuasa berhasil digenerate & diunduh (.doc)', 'success');
+  closeSkExportModal();
+}
+
+// ── Surat Pernyataan & Pengantar (BPOM / SKI submission letter) ──
+let sppItemRows = [];
+
+function openSppExportModal() {
+  const modal = document.getElementById('spp-export-modal');
+  if (!modal) return;
+  if (!sppItemRows.length) sppItemRows = [{ nama:'', kemasan:'', noBets:'', jumlah:'', noInvoice:'', negara:'', noHs:'', nilai:'', nie:'' }];
+  const set = (id, val) => { const el = document.getElementById(id); if (el && !el.value) el.value = val; };
+  set('spp-tanggal', new Date().toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' }));
+  set('spp-nama-perusahaan', IMPORTER_LETTERHEAD.name);
+  set('spp-alamat', `${IMPORTER_LETTERHEAD.addr1} ${IMPORTER_LETTERHEAD.addr2}`);
+  renderSppItemRows();
+  modal.style.display = 'flex';
+}
+
+function closeSppExportModal() {
+  const modal = document.getElementById('spp-export-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function renderSppItemRows() {
+  const tbody = document.getElementById('spp-items-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  sppItemRows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const cell = (field, ph, w) => `<input type="text" value="${r[field] || ''}" placeholder="${ph||''}" style="width:${w||'100%'};border:none;background:transparent;font-size:12.5px;padding:4px" oninput="sppItemRows[${i}].${field}=this.value;updateSppMergePreview();" />`;
+    tr.innerHTML = `
+      <td style="text-align:center;font-size:12px;color:var(--c-text-hint)">${i+1}</td>
+      <td>${cell('nama','Nama produk')}</td>
+      <td>${cell('kemasan','Kemasan')}</td>
+      <td>${cell('noBets','No Bets')}</td>
+      <td>${cell('jumlah','Jumlah','60px')}</td>
+      <td>${cell('noInvoice','No Invoice & tgl')}</td>
+      <td>${cell('negara','Negara asal')}</td>
+      <td>${cell('noHs','No HS')}</td>
+      <td>${cell('nilai','Nilai')}</td>
+      <td>${cell('nie','No NIE (NAxxxxxxxxxx)')}</td>
+      <td><button class="btn-detail btn-detail-danger" onclick="removeSppRow(${i})" title="Hapus baris"><i class="ti ti-trash"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  updateSppMergePreview();
+}
+
+function addSppRow() {
+  sppItemRows.push({ nama:'', kemasan:'', noBets:'', jumlah:'', noInvoice:'', negara:'', noHs:'', nilai:'', nie:'' });
+  renderSppItemRows();
+}
+
+function removeSppRow(i) {
+  sppItemRows.splice(i, 1);
+  if (!sppItemRows.length) sppItemRows.push({ nama:'', kemasan:'', noBets:'', jumlah:'', noInvoice:'', negara:'', noHs:'', nilai:'', nie:'' });
+  renderSppItemRows();
+}
+
+// ── Merge logic: rows with the same Product Name + Packaging + Value ──
+// (detected from the CI) are treated as the same SKU and combined into
+// a single line item (quantities summed; distinct batch/invoice/NIE
+// references are kept, joined together).
+const SKI_MAX_SKU = 20;
+
+function sppNormKey(s) {
+  return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function sppParseNum(v) {
+  const n = Number(String(v || '0').replace(/[^\d.-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
+function mergeSkiRows(rows) {
+  const map = new Map();
+  const order = [];
+  rows.forEach(r => {
+    const key = [sppNormKey(r.nama), sppNormKey(r.kemasan), sppNormKey(r.nilai)].join('|');
+    if (!map.has(key)) {
+      map.set(key, {
+        ...r,
+        _jumlahRaw: r.jumlah || '',
+        _jumlah: sppParseNum(r.jumlah),
+        _noBets: new Set([r.noBets].filter(Boolean)),
+        _noInvoice: new Set([r.noInvoice].filter(Boolean)),
+        _nie: new Set([r.nie].filter(Boolean)),
+        _merged: 0,
+      });
+      order.push(key);
+    } else {
+      const m = map.get(key);
+      m._jumlah += sppParseNum(r.jumlah);
+      m._merged += 1;
+      if (r.noBets) m._noBets.add(r.noBets);
+      if (r.noInvoice) m._noInvoice.add(r.noInvoice);
+      if (r.nie) m._nie.add(r.nie);
+    }
+  });
+  return order.map(k => {
+    const m = map.get(k);
+    return {
+      nama: m.nama, kemasan: m.kemasan, negara: m.negara, noHs: m.noHs, nilai: m.nilai,
+      jumlah: m._merged > 0 ? (m._jumlah ? m._jumlah.toLocaleString('id-ID') : '') : m._jumlahRaw,
+      noBets: [...m._noBets].join(', '),
+      noInvoice: [...m._noInvoice].join(', '),
+      nie: [...m._nie].join(', '),
+      _mergedCount: m._merged,
+    };
+  });
+}
+
+function getMergedSppRows() {
+  const validRows = sppItemRows.filter(r => r.nama && r.nie);
+  return mergeSkiRows(validRows);
+}
+
+function updateSppMergePreview() {
+  const el = document.getElementById('spp-merge-preview');
+  if (!el) return;
+  const merged = getMergedSppRows();
+  const mergedCount = merged.reduce((s, r) => s + (r._mergedCount || 0), 0);
+  const over = merged.length > SKI_MAX_SKU;
+  el.innerHTML = `${merged.length} SKU setelah digabung${mergedCount ? ` (${mergedCount} baris digabung otomatis karena nama, kemasan &amp; nilai sama)` : ''}.`
+    + (over ? ` <span style="color:#ef4444;font-weight:600">Melebihi maksimal ${SKI_MAX_SKU} SKU — pecah menjadi surat terpisah.</span>` : '');
+}
+
+// Shared product table — matches the official BPOM cover-letter table
+// (No, Nama Produk Yang Tertera Pada Invoice, Kemasan, No Bets, Jumlah,
+// Nomor Invoice & Tanggal, Negara Asal, No HS, Nilai/Harga Pada Invoice, No. Notifikasi).
+function skiItemsTableHtml(rows) {
+  const rowsHtml = rows.map((r, i) => `
+    <tr>
+      <td class="center">${i+1}</td>
+      <td>${r.nama}</td>
+      <td class="center">${r.kemasan||'-'}</td>
+      <td class="center">${r.noBets||'-'}</td>
+      <td class="center">${r.jumlah||'-'}</td>
+      <td>${r.noInvoice||'-'}</td>
+      <td class="center">${r.negara||'-'}</td>
+      <td class="center">${r.noHs||'-'}</td>
+      <td class="right">${r.nilai||'-'}</td>
+      <td class="center">${r.nie}</td>
+    </tr>`).join('');
+  return `
+    <table>
+      <thead><tr>
+        <th style="width:22px">No</th><th>Nama Produk Yang Tertera Pada Invoice</th><th>Kemasan</th><th>No Bets</th>
+        <th>Jumlah</th><th>Nomor Invoice &amp; Tanggal</th><th>Negara Asal</th><th>No HS</th><th>Nilai/Harga Pada Invoice</th><th>No. Notifikasi</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+}
+
+// Validates & returns the merged (max-20-SKU) rows, or null + toast on error.
+function validateSppRows() {
+  const merged = getMergedSppRows();
+  if (!merged.length) {
+    showToast('Isi minimal 1 baris item (Nama produk & No NIE wajib).', 'error');
+    return null;
+  }
+  if (merged.length > SKI_MAX_SKU) {
+    showToast(`Maksimal ${SKI_MAX_SKU} SKU per surat (saat ini ${merged.length} SKU setelah digabung). Pecah menjadi beberapa surat.`, 'error');
+    return null;
+  }
+  return merged;
+}
+
+// ── Surat Pengantar (permohonan SKI ke BPOM) ───────────────────────
+function generateSuratPengantarSkiDocx() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const required = ['spp-no-surat-pengantar','spp-tanggal','spp-nama-perusahaan','spp-alamat','spp-nama-penandatangan','spp-jabatan-penandatangan'];
+  const missing = required.filter(id => !v(id));
+  if (missing.length) { showToast(`Lengkapi dulu ${missing.length} field wajib (*).`, 'error'); return; }
+  const merged = validateSppRows();
+  if (!merged) return;
+
+  const data = {
+    noSurat: v('spp-no-surat-pengantar'), tanggal: v('spp-tanggal'), namaPerusahaan: v('spp-nama-perusahaan'),
+    alamat: v('spp-alamat'), namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
+  };
+
+  const body = `
+    <table style="border:none;margin-bottom:0;">
+      <tr>
+        <td style="border:none;width:60%;vertical-align:top;padding:0">
+          Kepada Yth.<br/>Direktur Pengawasan Kosmetik<br/>Badan Pengawasan Obat dan Makanan RI<br/>Jl. Percetakan Negara No 23<br/>Jakarta
+        </td>
+        <td style="border:none;width:40%;vertical-align:top;padding:0">
+          Tanggal : ${data.tanggal}<br/>Dept : Import<br/>No Surat : ${data.noSurat}
+        </td>
+      </tr>
+    </table>
+    <p style="margin-top:16px">Hal : Permohonan Surat Keterangan Impor Produk Jadi Kosmetik</p>
+    <p>Dengan Hormat,</p>
+    <p>Bersama surat ini, kami ingin mengajukan permohonan untuk mendapatkan Surat Keterangan Impor untuk produk jadi kosmetik tersebut dibawah ini :</p>
+    ${skiItemsTableHtml(merged)}
+    <ol style="margin-top:16px;padding-left:20px">
+      <li>Invoice dan packing list</li>
+      <li>Bill of Landing (B/L) atau Air Ways Bill (AWB)</li>
+      <li>Sertifikat Analisa (CoA)</li>
+      <li>Fotokopi Surat Pemberitahuan Notifikasi</li>
+      <li>Surat Perjanjian kerjasama antara importer dan pemilik nomor izin edar yang disahkan oleh notaris (bila diperlukan).</li>
+      <li>Surat Pernyataan dari pemohon (untuk produk jadi) yang menyatakan kesesuaian nama yang dicantumkan pada invoice dengan nama yang tercantum dalam izin edar</li>
+    </ol>
+    <p>Demikian permohonan ini kami ajukan, atas perhatiannya kami ucapkan terima kasih.</p>
+    <table style="border:none;margin-top:24px;">
+      <tr><td style="border:none;width:60%;"></td>
+        <td style="border:none;width:40%;">
+          <p>Hormat Kami,</p>
+          <p class="sig-name">${data.namaPenandatangan}</p>
+          <p>${data.jabatanPenandatangan} ${data.namaPerusahaan}</p>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  downloadHtmlAsWord(`Surat_Pengantar_SKI_${data.noSurat.replace(/[^\w]+/g,'_')}`, body);
+  showToast('✓ Surat Pengantar SKI berhasil digenerate & diunduh (.doc)', 'success');
+}
+
+// ── Surat Pernyataan (untuk produk jadi) ───────────────────────────
+function generateSuratPernyataanSkiDocx() {
+  const v = id => (document.getElementById(id)?.value || '').trim();
+  const required = ['spp-no-surat-pernyataan','spp-tanggal','spp-nama-perusahaan','spp-alamat','spp-nama-penandatangan','spp-jabatan-penandatangan'];
+  const missing = required.filter(id => !v(id));
+  if (missing.length) { showToast(`Lengkapi dulu ${missing.length} field wajib (*).`, 'error'); return; }
+  const merged = validateSppRows();
+  if (!merged) return;
+
+  const data = {
+    noSurat: v('spp-no-surat-pernyataan'), tanggal: v('spp-tanggal'), namaPerusahaan: v('spp-nama-perusahaan'),
+    alamat: v('spp-alamat'), namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
+    noApi: v('spp-no-api'), npwp: v('spp-npwp'),
+    namaProdusen: v('spp-nama-produsen'), alamatProdusen: v('spp-alamat-produsen'),
+    namaEksportir: v('spp-nama-eksportir'), alamatEksportir: v('spp-alamat-eksportir'),
+  };
+  const alamatProdusenHtml = data.alamatProdusen ? data.alamatProdusen.split('\n').filter(Boolean).join('<br/>') : '-';
+
+  const body = `
+    <table style="border:none;margin-bottom:0;">
+      <tr><td style="border:none;width:60%"></td>
+        <td style="border:none;width:40%;vertical-align:top;padding:0">
+          Tanggal : ${data.tanggal}<br/>Dept : Import<br/>No Surat : ${data.noSurat}
+        </td>
+      </tr>
+    </table>
+    <p class="bold center" style="margin:20px 0 0;font-size:13pt;">SURAT PERNYATAAN</p>
+    <p class="bold center" style="margin:0 0 16px;">(Untuk Produk Jadi)</p>
+    <p>Yang bertanda tangan dibawah ini :</p>
+    <table style="border:none;margin-bottom:12px;">
+      <tr><td style="border:none;width:120px;padding:2px 0;">Nama</td><td style="border:none;padding:2px 0;">: ${data.namaPenandatangan}</td></tr>
+      <tr><td style="border:none;padding:2px 0;">Jabatan</td><td style="border:none;padding:2px 0;">: ${data.jabatanPenandatangan} ${data.namaPerusahaan}</td></tr>
+      <tr><td style="border:none;padding:2px 0;vertical-align:top">Alamat</td><td style="border:none;padding:2px 0;">: ${data.alamat}</td></tr>
+    </table>
+    <p>Bertindak untuk dan atas nama perusahaan :</p>
+    <table style="border:none;margin-bottom:12px;">
+      <tr><td style="border:none;width:120px;padding:2px 0;">Nama</td><td style="border:none;padding:2px 0;">: ${data.namaPerusahaan}</td></tr>
+      <tr><td style="border:none;padding:2px 0;vertical-align:top">Alamat</td><td style="border:none;padding:2px 0;">: ${data.alamat}</td></tr>
+      ${data.noApi ? `<tr><td style="border:none;padding:2px 0;">No API</td><td style="border:none;padding:2px 0;">: ${data.noApi}</td></tr>` : ''}
+      ${data.npwp ? `<tr><td style="border:none;padding:2px 0;">NPWP</td><td style="border:none;padding:2px 0;">: ${data.npwp}</td></tr>` : ''}
+    </table>
+    <p>Dengan ini menyatakan bahwa:</p>
+    <p style="margin-bottom:4px">1.</p>
+    ${skiItemsTableHtml(merged)}
+    <p style="margin-top:14px">Yang diimpor melalui :</p>
+    <table style="margin-bottom:12px;">
+      <tr><td style="width:140px">Nama Produsen</td><td>: ${data.namaProdusen||'-'}</td></tr>
+      <tr><td style="vertical-align:top">Alamat Produsen</td><td>: ${alamatProdusenHtml}</td></tr>
+      <tr><td>Nama Eksportir</td><td>: ${data.namaEksportir||'-'}</td></tr>
+      <tr><td>Alamat Eksportir</td><td>: ${data.alamatEksportir||'-'}</td></tr>
+    </table>
+    <p>Adalah Produk Jadi Kosmetik yang akan didistribusikan ke wilayah Indonesia berdasarkan No. Pemberitahuan Telah dinotifikasi tersebut diatas. Nama yang tercantum pada invoice mempunyai komposisi yang sama dengan nama yang tercantum dalam Pemberitahuan Telah Dinotifikasi.</p>
+    <p>2. Dalam hal sertifikasi analisis yang dilampirkan/ diunggah tidak memuat parameter dan hasil uji sesuai ketentuan, maka kami bersedia untuk dilakukan pengambilan contoh/sampling pengujian laboratorium oleh petugas Badan POM RI, dan menanggung seluruh biaya yang diperlukan dalam pengujian tersebut, dan tidak akan mengedarkan/menjual barang tersebut sebelum mendapat persetujuan dari Badan POM RI.</p>
+    <p>3. Apabila terdapat ketidaksesuaian, maka kami bersedia untuk dilakukan tindak lanjut sesuai ketentuan perundang-undangan.</p>
+    <p>4. Apabila kami tidak memenuhi ketiga point diatas, kami bersedia dikenakan sanksi sesuai dengan ketentuan yang berlaku.</p>
+    <p>Surat pernyataan ini kami buat dengan sebenar-benarnya, apabila dikemudian hari terjadi penyimpangan, maka kami bersedia menerima sanksi sesuai dengan peraturan dan perundang-undangan yang berlaku.</p>
+    <table style="border:none;margin-top:24px;">
+      <tr><td style="border:none;width:60%;"></td>
+        <td style="border:none;width:40%;">
+          <p>Hormat Kami,</p>
+          <p class="sig-name">${data.namaPenandatangan}</p>
+          <p class="bold">${data.jabatanPenandatangan} ${data.namaPerusahaan}</p>
+        </td>
+      </tr>
+    </table>
+  `;
+
+  downloadHtmlAsWord(`Surat_Pernyataan_SKI_${data.noSurat.replace(/[^\w]+/g,'_')}`, body);
+  showToast('✓ Surat Pernyataan SKI berhasil digenerate & diunduh (.doc)', 'success');
 }

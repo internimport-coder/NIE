@@ -1,5 +1,5 @@
-<!DOCTYPE html>
-<html lang="id">
+﻿<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -33,53 +33,94 @@
         <span class="nav-text">Upcoming Shipment</span>
       </a>
 
-      <div class="nav-section-label" style="margin-top:8px">PURCHASE ORDER</div>
+      <div class="nav-section-label" style="margin-top:8px">MAIN MENU</div>
 
-      <a href="#" class="nav-item" id="nav-po-create" onclick="switchTab('create'); return false;">
-        <span class="nav-icon"><i class="ti ti-file-plus"></i></span>
-        <span class="nav-text">Buat PO</span>
-      </a>
+      <!-- ═══ PO (dropdown) ═══ -->
+      <div class="nav-group" id="navgrp-po">
+        <a href="#" class="nav-item nav-group-toggle" onclick="toggleNavGroup('navgrp-po'); return false;">
+          <span class="nav-icon"><i class="ti ti-file-invoice"></i></span>
+          <span class="nav-text">PO</span>
+          <span class="nav-caret"><i class="ti ti-chevron-down"></i></span>
+        </a>
+        <div class="nav-submenu"><div>
 
-      <a href="#" class="nav-item" id="nav-po-history" onclick="switchTab('history'); return false;">
-        <span class="nav-icon"><i class="ti ti-list-details"></i></span>
-        <span class="nav-text">History PO</span>
-      </a>
+          <div class="nav-subgroup" id="navgrp-po-inquiry">
+            <a href="#" class="nav-subitem nav-group-toggle" id="nav-po-inquiry"
+               onclick="switchTab('search'); toggleNavGroup('navgrp-po-inquiry', true); return false;">
+              <span class="nav-dot"></span>
+              <span class="nav-text">PO Inquiry</span>
+              <span class="nav-caret small"><i class="ti ti-chevron-down"></i></span>
+            </a>
+            <div class="nav-submenu"><div>
+              <a href="#" class="nav-subitem2" id="nav-po-history" onclick="switchTab('history'); return false;">
+                <span class="nav-dot"></span><span class="nav-text">History PO</span>
+              </a>
+            </div></div>
+          </div>
 
-      <a href="#" class="nav-item" id="nav-po-inquiry" onclick="switchTab('search'); return false;">
-        <span class="nav-icon"><i class="ti ti-search"></i></span>
-        <span class="nav-text">PO Inquiry</span>
-      </a>
+          <a href="#" class="nav-subitem" id="nav-pib-compare" onclick="switchTab('pib-compare'); return false;">
+            <span class="nav-dot"></span><span class="nav-text">Compare PIB</span>
+          </a>
 
-      <a href="#" class="nav-item" id="nav-ci" onclick="switchTab('ci'); return false;">
-        <span class="nav-icon"><i class="ti ti-checkbox"></i></span>
-        <span class="nav-text">Verifikasi CI</span>
-      </a>
+          <div class="nav-subgroup" id="navgrp-ci">
+            <a href="#" class="nav-subitem nav-group-toggle" id="nav-ci"
+               onclick="switchTab('ci'); toggleNavGroup('navgrp-ci', true); return false;">
+              <span class="nav-dot"></span>
+              <span class="nav-text">Verify with CI</span>
+              <span class="nav-caret small"><i class="ti ti-chevron-down"></i></span>
+            </a>
+            <div class="nav-submenu"><div>
+              <a href="#" class="nav-subitem2" id="nav-ci-history" onclick="switchTab('ci-history'); return false;">
+                <span class="nav-dot"></span><span class="nav-text">CI Verification History</span>
+              </a>
+            </div></div>
+          </div>
 
-      <a href="#" class="nav-item" id="nav-ci-history" onclick="switchTab('ci-history'); return false;">
-        <span class="nav-icon"><i class="ti ti-history"></i></span>
-        <span class="nav-text">History Verifikasi CI</span>
-      </a>
+          <a href="#" class="nav-subitem" id="nav-valrecon" onclick="switchTab('valrecon'); return false;">
+            <span class="nav-dot"></span><span class="nav-text">Payment Proof Matching</span>
+          </a>
 
-      <div class="nav-section-label" style="margin-top:8px">REKONSILIASI NILAI</div>
+        </div></div>
+      </div>
 
-      <a href="#" class="nav-item" id="nav-valrecon" onclick="switchTab('valrecon'); return false;">
-        <span class="nav-icon"><i class="ti ti-scale"></i></span>
-        <span class="nav-text">Value Reconciliation</span>
-      </a>
+      <!-- ═══ SKI BPOM (dropdown) ═══ -->
+      <div class="nav-group" id="navgrp-skibpom">
+        <a href="#" class="nav-item nav-group-toggle" onclick="toggleNavGroup('navgrp-skibpom'); return false;">
+          <span class="nav-icon"><i class="ti ti-certificate"></i></span>
+          <span class="nav-text">SKI BPOM</span>
+          <span class="nav-caret"><i class="ti ti-chevron-down"></i></span>
+        </a>
+        <div class="nav-submenu"><div>
 
-      <div class="nav-section-label" style="margin-top:8px">NIE &amp; BPOM</div>
+          <a href="#" class="nav-subitem" id="nav-nie" onclick="switchTab('nie'); return false;">
+            <span class="nav-dot"></span><span class="nav-text">NIE Center</span>
+          </a>
 
-      <a href="#" class="nav-item" id="nav-nie" onclick="switchTab('nie'); return false;">
-        <span class="nav-icon"><i class="ti ti-certificate"></i></span>
-        <span class="nav-text">NIE Center</span>
-      </a>
+          <div class="nav-subgroup" id="navgrp-gendoc">
+            <a href="#" class="nav-subitem nav-group-toggle" onclick="toggleNavGroup('navgrp-gendoc'); return false;">
+              <span class="nav-dot"></span>
+              <span class="nav-text">Generate Document</span>
+              <span class="nav-caret small"><i class="ti ti-chevron-down"></i></span>
+            </a>
+            <div class="nav-submenu"><div>
+              <a href="#" class="nav-subitem2" id="nav-gendoc-sk" onclick="goToSuratKuasaFromShipment(); return false;">
+                <span class="nav-dot"></span><span class="nav-text">Create Power of Attorney</span>
+              </a>
+              <a href="#" class="nav-subitem2" id="nav-gendoc-spp" onclick="openSppExportModal(); return false;">
+                <span class="nav-dot"></span><span class="nav-text">Create Statement &amp; Cover Letter</span>
+              </a>
+            </div></div>
+          </div>
+
+        </div></div>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
-      <div class="sidebar-user">
-        <div class="sidebar-user-avatar">AD</div>
+      <div class="sidebar-user" onclick="openUserIdentityModal(false)" style="cursor:pointer" title="Click to change your username (used in the edit log)">
+        <div class="sidebar-user-avatar" id="sidebar-user-avatar">AD</div>
         <div class="sidebar-user-info">
-          <div class="sidebar-user-name">Admin</div>
+          <div class="sidebar-user-name" id="sidebar-user-name">Admin</div>
           <div class="sidebar-user-role">Import Manager</div>
         </div>
       </div>
@@ -97,7 +138,7 @@
         </button>
         <div>
           <h1 class="page-title" id="page-title">Dashboard</h1>
-          <p class="page-sub" id="page-sub">Ringkasan aktivitas import dan shipment terkini</p>
+          <p class="page-sub" id="page-sub">Overview of recent import and shipment activity</p>
         </div>
       </div>
       <div class="topbar-right">
@@ -118,7 +159,7 @@
         <div class="kpi-icon"><i class="ti ti-clock-pause"></i></div>
         <div>
           <div class="kpi-val" id="kpi-belum">0</div>
-          <div class="kpi-label">Belum PIB</div>
+          <div class="kpi-label">No PIB Yet</div>
         </div>
       </div>
       <div class="kpi-card kpi-red">
@@ -157,16 +198,16 @@
         </div>
         <div class="dash-hero-actions">
           <button class="btn-ghost btn-sm" onclick="switchTab('create');clearPibForm();renderItemRows([])">
-            <i class="ti ti-file-plus"></i> Buat PO
+            <i class="ti ti-file-plus"></i> Create PO
           </button>
           <button class="btn-ghost btn-sm" onclick="switchTab('ci')">
-            <i class="ti ti-file-search"></i> Validasi CI
+            <i class="ti ti-file-search"></i> Validate CI
           </button>
           <button class="btn-ghost btn-sm" onclick="switchTab('valrecon')">
-            <i class="ti ti-scale"></i> Value Recon
+            <i class="ti ti-receipt"></i> Payment Proof
           </button>
           <button class="btn-ghost btn-sm" onclick="switchTab('shipment')">
-            <i class="ti ti-ship"></i> Lihat Shipment
+            <i class="ti ti-ship"></i> View Shipments
           </button>
           <button class="btn-primary btn-sm" onclick="switchTab('nie')">
             <i class="ti ti-certificate"></i> NIE Center
@@ -176,13 +217,13 @@
 
       <!-- ── Reminder / Alert Bar ── -->
       <div class="section-heading" style="margin-top:0">
-        <i class="ti ti-bell-ringing"></i><span>Yang Perlu Diperhatikan</span>
+        <i class="ti ti-bell-ringing"></i><span>Needs Attention</span>
       </div>
       <div id="dash-alerts" class="dash-alert-list" style="margin-bottom:8px"></div>
 
       <!-- ── PO Status Summary ── HIDDEN -->
       <div class="section-heading" style="display:none">
-        <i class="ti ti-chart-donut"></i><span>Ringkasan Status PO</span>
+        <i class="ti ti-chart-donut"></i><span>PO Status Summary</span>
       </div>
       <div id="dash-po-summary" style="margin-bottom:8px;display:none"></div>
 
@@ -193,7 +234,7 @@
           <span id="dash-ship-count" class="badge badge-blue" style="font-size:11px"></span>
         </div>
         <button class="btn-ghost btn-sm" onclick="switchTab('shipment')" style="font-size:12px">
-          Lihat semua <i class="ti ti-arrow-right"></i>
+          View all <i class="ti ti-arrow-right"></i>
         </button>
       </div>
       <div id="home-hero"></div>
@@ -213,13 +254,13 @@
       <div class="page-actions-row">
         <div class="shipment-filter-row">
           <div class="field-group">
-            <label><i class="ti ti-search"></i> Cari Shipment</label>
-            <input type="text" id="shipment-filter-name" placeholder="Nama shipment…" oninput="renderShipmentDashboard()" />
+            <label><i class="ti ti-search"></i> Search Shipment</label>
+            <input type="text" id="shipment-filter-name" placeholder="Shipment name…" oninput="renderShipmentDashboard()" />
           </div>
           <div class="field-group">
             <label><i class="ti ti-tag"></i> Brand</label>
             <select id="shipment-filter-brand" onchange="renderShipmentDashboard()">
-              <option value="">Semua Brand</option>
+              <option value="">All Brands</option>
               <option>KLAVUU</option><option>COSRX</option><option>ESPOIR</option>
               <option>IMFROM</option><option>MAKE PREM</option><option>MEDIHEAL</option>
               <option>PPP (PUREPAWPAW)</option><option>RATEDGREEN</option><option>SUKIN</option>
@@ -227,48 +268,48 @@
             </select>
           </div>
           <div class="field-group">
-            <label><i class="ti ti-container"></i> Tipe Kontainer</label>
+            <label><i class="ti ti-container"></i> Container Type</label>
             <select id="shipment-filter-container" onchange="renderShipmentDashboard()">
-              <option value="">Semua Tipe</option>
+              <option value="">All Types</option>
               <option value="FCL">FCL</option>
               <option value="LCL">LCL</option>
             </select>
           </div>
         </div>
         <button class="btn-primary" onclick="toggleShipmentForm(true)">
-          <i class="ti ti-plus"></i> Tambah Shipment
+          <i class="ti ti-plus"></i> Add Shipment
         </button>
       </div>
 
       <!-- Shipment Form -->
       <div id="shipment-form" class="form-card" style="display:none">
         <div class="form-card-title">
-          <i class="ti ti-truck"></i> <span id="shipment-form-title">Tambah Shipment Baru</span>
+          <i class="ti ti-truck"></i> <span id="shipment-form-title">Add Shipment Baru</span>
         </div>
         <div class="form-grid-3">
           <div class="field-group">
-            <label>Nama Shipment <span class="req">*</span></label>
+            <label>Shipment Name <span class="req">*</span></label>
             <input type="text" id="shipment-name" placeholder="e.g. Shipment A" />
           </div>
           <div class="field-group">
             <label>Brand <span class="req">*</span></label>
             <select id="shipment-brand">
-              <option value="">Pilih Brand</option>
+              <option value="">Select Brand</option>
             </select>
-            <input type="text" id="shipment-brand-custom" placeholder="Masukkan brand lain" style="display:none;margin-top:8px" />
+            <input type="text" id="shipment-brand-custom" placeholder="Enter another brand" style="display:none;margin-top:8px" />
           </div>
           <div class="field-group">
             <label>Vessel</label>
-            <input type="text" id="shipment-vessel" placeholder="Nama kapal" />
+            <input type="text" id="shipment-vessel" placeholder="Ship name" />
           </div>
           <div class="field-group">
             <label>NO BL/AWL</label>
-            <input type="text" id="shipment-no-bl" placeholder="Nomor BL/AWL" />
+            <input type="text" id="shipment-no-bl" placeholder="BL/AWL Number" />
           </div>
           <div class="field-group">
-            <label>Tipe Kontainer <span class="req">*</span></label>
+            <label>Container Type <span class="req">*</span></label>
             <select id="shipment-container-type">
-              <option value="">Pilih Tipe</option>
+              <option value="">Select Type</option>
               <option value="FCL">FCL — Full Container Load</option>
               <option value="LCL">LCL — Less Container Load</option>
             </select>
@@ -278,21 +319,21 @@
             <input type="text" id="shipment-liner" placeholder="e.g. CMA CGM, Maersk" />
           </div>
           <div class="field-group">
-            <label><i class="ti ti-calendar-event" style="color:var(--c-blue)"></i> ETD (Estimasi Keberangkatan) <span class="req">*</span></label>
+            <label><i class="ti ti-calendar-event" style="color:var(--c-blue)"></i> ETD (Estimated Departure) <span class="req">*</span></label>
             <input type="date" id="shipment-etd" />
           </div>
           <div class="field-group">
-            <label><i class="ti ti-calendar-event" style="color:var(--c-orange)"></i> ATA Port (Tiba di Pelabuhan) <span class="req">*</span></label>
+            <label><i class="ti ti-calendar-event" style="color:var(--c-orange)"></i> ATA Port (Arrival at Port) <span class="req">*</span></label>
             <input type="date" id="shipment-ata-port" />
           </div>
           <div class="field-group">
-            <label><i class="ti ti-calendar-event" style="color:var(--c-green)"></i> ATA Warehouse (Tiba di Gudang) <span class="req">*</span></label>
+            <label><i class="ti ti-calendar-event" style="color:var(--c-green)"></i> ATA Warehouse (Arrival at Warehouse) <span class="req">*</span></label>
             <input type="date" id="shipment-ata-wh" />
           </div>
         </div>
         <div class="form-actions">
-          <button class="btn-ghost" onclick="toggleShipmentForm(false)"><i class="ti ti-x"></i> Batal</button>
-          <button class="btn-primary" id="shipment-save-btn" onclick="addShipment()"><i class="ti ti-device-floppy"></i> Simpan Shipment</button>
+          <button class="btn-ghost" onclick="toggleShipmentForm(false)"><i class="ti ti-x"></i> Cancel</button>
+          <button class="btn-primary" id="shipment-save-btn" onclick="addShipment()"><i class="ti ti-device-floppy"></i> Save Shipment</button>
         </div>
       </div>
 
@@ -302,23 +343,23 @@
       <!-- Table -->
       <div class="data-card">
         <div class="data-card-header">
-          <span><i class="ti ti-list"></i> Daftar Shipment</span>
+          <span><i class="ti ti-list"></i> Shipment List</span>
         </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
                 <th>#</th>
-                <th>Nama Shipment</th>
+                <th>Shipment Name</th>
                 <th>Brand</th>
                 <th>Vessel</th>
                 <th>NO BL/AWL</th>
                 <th>Liner Shipment</th>
-                <th>Kontainer</th>
+                <th>Container</th>
                 <th>ETD</th>
                 <th>ATA Port</th>
                 <th>ATA Warehouse</th>
-                <th>Aksi</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="shipment-list"></tbody>
@@ -336,49 +377,49 @@
       <div class="form-card pdf-upload-card" id="pdf-upload-card">
         <div class="form-card-title">
           <i class="ti ti-file-scan"></i>
-          <span>Auto-Fill dari PDF PO</span>
+          <span>Auto-Fill from PO PDF</span>
           <span class="badge badge-blue" style="margin-left:8px;font-size:11px">AI-Powered</span>
         </div>
         <div class="hint-box hint-box-blue">
           <i class="ti ti-sparkles"></i>
-          Upload file PDF Purchase Order — sistem akan otomatis membaca dan mengisi form di bawah.
+          Upload a Purchase Order PDF — the system will automatically read it and fill in the form below.
         </div>
         <div id="pdf-drop-zone" class="pdf-drop-zone" onclick="document.getElementById('pdf-file-input').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handlePdfDrop(event)">
           <input type="file" id="pdf-file-input" accept=".pdf" style="display:none" onchange="handlePdfUpload(this.files[0])" />
           <div id="pdf-drop-content">
             <i class="ti ti-file-upload" style="font-size:32px;color:var(--c-blue);margin-bottom:8px"></i>
-            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop PDF di sini</div>
-            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf · Maks 10MB</div>
+            <div style="font-weight:500;margin-bottom:4px">Click or drag &amp; drop the PDF here</div>
+            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf · Max 10MB</div>
           </div>
           <div id="pdf-loading" style="display:none">
             <div class="pdf-spinner"></div>
-            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Membaca PDF dan mengisi form…</div>
+            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Reading the PDF and filling the form…</div>
           </div>
         </div>
         <div id="pdf-result-info" style="display:none" class="pdf-result-info">
           <i class="ti ti-circle-check" style="color:var(--c-green)"></i>
           <span id="pdf-result-text"></span>
-          <button class="btn-ghost btn-sm" onclick="resetPdfUpload()"><i class="ti ti-rotate"></i> Upload lagi</button>
+          <button class="btn-ghost btn-sm" onclick="resetPdfUpload()"><i class="ti ti-rotate"></i> Upload again</button>
         </div>
       </div>
 
       <div class="form-card">
         <div class="form-card-title">
           <i class="ti ti-file-plus"></i>
-          <span>Buat / Edit Purchase Order</span>
+          <span>Create / Edit Purchase Order</span>
           <button class="btn-ghost" style="margin-left:auto" onclick="switchTab('history')">
-            <i class="ti ti-arrow-left"></i> Kembali
+            <i class="ti ti-arrow-left"></i> Back
           </button>
         </div>
 
         <!-- Section: Info PO -->
         <div class="form-section">
-          <div class="form-section-title"><i class="ti ti-file-text"></i> Informasi Purchase Order</div>
+          <div class="form-section-title"><i class="ti ti-file-text"></i> Purchase Order Information</div>
           <div class="form-grid-4">
             <div class="field-group">
               <label>PO Number <span class="req">*</span></label>
               <input type="text" id="pib-po-number" placeholder="e.g. PO-128" />
-              <div class="field-hint">Nomor unik untuk PO ini</div>
+              <div class="field-hint">Unique number for this PO</div>
             </div>
             <div class="field-group">
               <label>PO Date <span class="req">*</span></label>
@@ -387,7 +428,7 @@
             <div class="field-group">
               <label>Brand / Supplier <span class="req">*</span></label>
               <select id="pib-supplier">
-                <option value="">Pilih Brand</option>
+                <option value="">Select Brand</option>
                 <option>KLAVUU</option><option>COSRX</option><option>ESPOIR</option>
                 <option>IMFROM</option><option>MAKE PREM</option><option>MEDIHEAL</option>
                 <option>PPP (PUREPAWPAW)</option><option>RATEDGREEN</option><option>SUKIN</option>
@@ -397,7 +438,7 @@
             <div class="field-group">
               <label>Rev Code</label>
               <input type="text" id="pib-rev-code" placeholder="e.g. PO/SBI/2025/00002213 (opsional)" />
-              <div class="field-hint">Kode revisi dari PO asli (jika ada)</div>
+              <div class="field-hint">Revision code from the original PO (if any)</div>
             </div>
             <div class="field-group">
               <label>Currency</label>
@@ -421,10 +462,10 @@
 
         <!-- Section: Info PIB -->
         <div class="form-section">
-          <div class="form-section-title"><i class="ti ti-file-invoice"></i> Informasi PIB (Pemberitahuan Impor Barang)</div>
+          <div class="form-section-title"><i class="ti ti-file-invoice"></i> PIB Information (Customs Import Declaration)</div>
           <div class="hint-box">
             <i class="ti ti-info-circle"></i>
-            Kosongkan kolom PIB Number jika dokumen PIB belum terbit. Status akan otomatis menjadi <strong>Belum PIB</strong>.
+            Leave the PIB Number field blank if the PIB document hasn't been issued yet. The status will automatically become <strong>No PIB Yet</strong>.
           </div>
           <div class="form-grid-4">
             <div class="field-group">
@@ -438,17 +479,17 @@
             <div class="field-group">
               <label>Total Qty PIB</label>
               <input type="number" id="pib-qty-pib" placeholder="0" min="0" readonly class="input-readonly" />
-              <div class="field-hint">Dihitung otomatis dari item di bawah</div>
+              <div class="field-hint">Automatically calculated from the items below</div>
             </div>
             <div class="field-group">
               <label>Total Qty Warehouse</label>
               <input type="number" id="pib-qty-wh" placeholder="0" min="0" readonly class="input-readonly" />
-              <div class="field-hint">Dihitung otomatis dari item · diisi oleh <strong>Admin WH</strong> saat barang diterima</div>
+              <div class="field-hint">Automatically calculated from the items · filled in by <strong>Warehouse Admin</strong> when goods are received</div>
             </div>
             <div class="field-group">
-              <label>Total Value PO (dari item)</label>
+              <label>Total PO Value (from items)</label>
               <input type="text" id="pib-total-value-po" placeholder="0.00" readonly class="input-readonly" />
-              <div class="field-hint">Qty PO × Harga Satuan, dijumlah semua item</div>
+              <div class="field-hint">Qty PO × Unit Price, summed across all items</div>
             </div>
           </div>
         </div>
@@ -456,29 +497,29 @@
         <!-- Section: Items -->
         <div class="form-section">
           <div class="form-section-title">
-            <i class="ti ti-package"></i> Detail Item / SKU
+            <i class="ti ti-package"></i> Item / SKU Details
             <button class="btn-add-item" onclick="addItemRow()" type="button">
-              <i class="ti ti-plus"></i> Tambah Baris
+              <i class="ti ti-plus"></i> Add Row
             </button>
           </div>
           <div class="hint-box">
             <i class="ti ti-bulb"></i>
-            Isi Qty PIB dan Qty Warehouse per SKU. Kolom <strong>Selisih</strong> dan <strong>Value PO</strong> dihitung otomatis (Qty PO × Harga Satuan × (1 − Diskon%)) — otomatis terisi dari PDF PO kalau pakai Auto-Fill.
+            Fill in the Qty PIB and Qty Warehouse per SKU. The <strong>Difference</strong> and <strong>Value PO</strong> columns are calculated automatically (Qty PO × Unit Price × (1 − Discount%)) — auto-filled from the PO PDF when using Auto-Fill.
           </div>
           <div class="table-wrap" style="margin-top:12px">
             <table class="data-table item-input-table">
               <thead>
                 <tr>
                   <th style="width:120px">SKU</th>
-                  <th>Nama Item</th>
+                  <th>Item Name</th>
                   <th style="width:90px">Size</th>
                   <th style="width:90px">Type</th>
                   <th class="num" style="width:90px">Qty PO</th>
                   <th class="num" style="width:90px">Qty PIB</th>
                   <th class="num" style="width:100px">Qty WH <span style="font-weight:400;font-size:10px;color:var(--c-text-hint)">(Admin WH)</span></th>
-                  <th class="num" style="width:80px">Selisih</th>
-                  <th class="num" style="width:110px">Harga Satuan</th>
-                  <th class="num" style="width:80px">Diskon (%)</th>
+                  <th class="num" style="width:80px">Difference</th>
+                  <th class="num" style="width:110px">Unit Price</th>
+                  <th class="num" style="width:80px">Discount (%)</th>
                   <th class="num" style="width:120px">Value PO</th>
                   <th style="width:60px"></th>
                 </tr>
@@ -493,7 +534,7 @@
             <i class="ti ti-rotate"></i> Reset Form
           </button>
           <button class="btn-primary" type="button" onclick="submitPibForm()">
-            <i class="ti ti-device-floppy"></i> Simpan PO
+            <i class="ti ti-device-floppy"></i> Save PO
           </button>
         </div>
       </div>
@@ -506,11 +547,26 @@
       <div class="page-actions-row">
         <div class="search-inline">
           <i class="ti ti-search"></i>
-          <input type="text" id="history-search" placeholder="Cari PO Number atau Brand…" oninput="filterHistory()" />
+          <input type="text" id="history-search" placeholder="Search PO Number or Brand…" oninput="filterHistory()" />
         </div>
-        <button class="btn-primary" onclick="switchTab('create'); clearPibForm(); renderItemRows([]);">
-          <i class="ti ti-plus"></i> Buat PO Baru
-        </button>
+        <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
+          <input type="file" id="history-import-json-input" accept="application/json,.json" multiple style="display:none" onchange="handleImportJsonFiles(this.files)" />
+          <button class="btn-ghost btn-sm" title="Export the PO(s) currently shown in History PO as a JSON file — edit it and Import JSON back in anytime"
+                  onclick="exportHistoryPoJson()">
+            <i class="ti ti-file-export"></i> Export JSON
+          </button>
+          <button class="btn-ghost btn-sm" title="Import one or more PO JSON files into History PO"
+                  onclick="document.getElementById('history-import-json-input').click()">
+            <i class="ti ti-file-import"></i> Import JSON
+          </button>
+          <button class="btn-ghost btn-sm" title="Generate a dummy PO JSON file from a PO PDF (for testing / Import JSON)"
+                  onclick="openCreatePoDummyDrawer()">
+            <i class="ti ti-file-code"></i> Create PO (Dummy)
+          </button>
+          <button class="btn-primary" onclick="switchTab('create'); clearPibForm(); renderItemRows([]);">
+            <i class="ti ti-plus"></i> Create PO Baru
+          </button>
+        </div>
       </div>
       <div class="data-card">
         <div class="data-card-header">
@@ -528,7 +584,7 @@
                 <th>Status</th>
                 <th class="num">Qty PIB</th>
                 <th class="num">Qty WH</th>
-                <th>Aksi</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="pib-history-tbody"></tbody>
@@ -537,17 +593,111 @@
       </div>
     </section>
 
+    <!-- ═══════════════════════════════════════════════════
+         DRAWER: CREATE PO (DUMMY) — detect a PO PDF and export
+         the extracted data as a downloadable JSON file, using
+         the same record structure as History PO / MOCK_PO_DATA.
+         Hidden by default — opened only from the small button
+         at the top-right of History PO.
+    ═══════════════════════════════════════════════════ -->
+    <div id="dummy-po-drawer-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998"
+         onclick="if(event.target===this) closeCreatePoDummyDrawer()">
+      <div id="dummy-po-drawer" style="position:fixed;top:0;right:0;height:100vh;width:100%;max-width:460px;background:var(--c-surface);box-shadow:-8px 0 32px rgba(0,0,0,.18);overflow-y:auto;padding:22px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <i class="ti ti-file-code" style="font-size:20px;color:var(--c-blue)"></i>
+          <h3 style="font-size:15px;font-weight:600;margin:0">Create PO (Dummy)</h3>
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="closeCreatePoDummyDrawer()"><i class="ti ti-x"></i></button>
+        </div>
+        <p style="font-size:12.5px;color:var(--c-text-hint);margin:0 0 16px">
+          Upload a PO PDF here to auto-detect its data. You can then <strong>import it straight into
+          History PO</strong>, or download it as a JSON file to keep/edit and import later.
+        </p>
+
+        <div id="dummy-pdf-drop-zone" class="pdf-drop-zone" onclick="document.getElementById('dummy-pdf-file-input').click()"
+             ondragover="event.preventDefault();this.classList.add('dragover')"
+             ondragleave="this.classList.remove('dragover')"
+             ondrop="handleDummyPdfDrop(event)">
+          <input type="file" id="dummy-pdf-file-input" accept=".pdf" style="display:none" onchange="handleDummyPdfUpload(this.files[0])" />
+          <div id="dummy-pdf-drop-content">
+            <i class="ti ti-file-upload" style="font-size:32px;color:var(--c-blue);margin-bottom:8px"></i>
+            <div style="font-weight:500;margin-bottom:4px">Click or drag &amp; drop a PO PDF here</div>
+            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf · Max 10MB</div>
+          </div>
+          <div id="dummy-pdf-loading" style="display:none">
+            <div class="pdf-spinner"></div>
+            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Reading the PDF…</div>
+          </div>
+        </div>
+        <div id="dummy-pdf-result-info" style="display:none" class="pdf-result-info">
+          <i class="ti ti-circle-check" style="color:var(--c-green)"></i>
+          <span id="dummy-pdf-result-text"></span>
+          <button class="btn-ghost btn-sm" onclick="resetDummyPdfUpload()"><i class="ti ti-rotate"></i> Upload again</button>
+        </div>
+
+        <div id="dummy-po-preview-wrap" style="display:none;margin-top:16px">
+          <div class="field-group" style="margin-bottom:12px">
+            <label>PO Number <span class="req">*</span></label>
+            <input type="text" id="dummy-po-number-input" placeholder="e.g. PO-128" oninput="onDummyPoNumberInput(this.value)" autocomplete="off" />
+            <div class="field-hint">Auto-filled from the PDF — check/fill this in if it wasn't detected, since it's required to import or download.</div>
+          </div>
+          <div class="data-card" style="padding:0;overflow:hidden">
+            <div class="data-card-header">
+              <span><i class="ti ti-package"></i> Preview: SKU / Qty PO / Qty PIB / Qty WH</span>
+              <span id="dummy-po-preview-count" class="count-badge"></span>
+            </div>
+            <div class="table-wrap" style="max-height:280px;overflow:auto">
+              <table class="data-table">
+                <thead>
+                  <tr><th>SKU</th><th class="num">Qty PO</th><th class="num">Qty PIB</th><th class="num">Qty WH</th></tr>
+                </thead>
+                <tbody id="dummy-po-preview-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="hint-box" style="margin-top:10px">
+            <i class="ti ti-info-circle"></i>
+            Qty PIB and Qty WH default to 0 in the dummy JSON — they get filled in later via Compare PIB / Warehouse data.
+          </div>
+        </div>
+
+        <div class="form-actions" style="margin-top:18px">
+          <button class="btn-ghost" type="button" onclick="closeCreatePoDummyDrawer()">Close</button>
+          <button class="btn-ghost" type="button" id="dummy-po-download-btn" disabled onclick="downloadDummyPoJson()">
+            <i class="ti ti-download"></i> Download JSON
+          </button>
+          <button class="btn-primary" type="button" id="dummy-po-import-btn" disabled onclick="importDummyPoToHistory()">
+            <i class="ti ti-file-import"></i> Import to History PO
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         MODAL: payment proof attachment viewer
+    ═══════════════════════════════════════════════ -->
+    <div id="payment-attachment-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999"
+         onclick="if(event.target===this) closePaymentAttachment()">
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);max-width:520px;width:92%;background:var(--c-surface);border-radius:var(--border-radius-lg);padding:16px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <i class="ti ti-paperclip" style="color:var(--c-blue)"></i>
+          <span id="payment-attachment-title" style="font-size:14px;font-weight:600"></span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="closePaymentAttachment()"><i class="ti ti-x"></i></button>
+        </div>
+        <img id="payment-attachment-img" src="" alt="Payment proof" style="width:100%;border-radius:10px;border:1px solid var(--c-border);display:block" />
+      </div>
+    </div>
+
     <!-- ════════════════════════════════════════════
          PAGE: PO INQUIRY / SEARCH
     ════════════════════════════════════════════ -->
     <section class="page-body" id="search-panel" style="display:none">
       <!-- Search Card -->
       <div class="form-card search-card">
-        <div class="form-card-title"><i class="ti ti-filter"></i> Filter Pencarian PO</div>
+        <div class="form-card-title"><i class="ti ti-filter"></i> PO Search Filter</div>
         <div class="form-grid-4">
           <div class="field-group">
             <label><i class="ti ti-file-text"></i> PO Number / SKU / Brand</label>
-            <input type="text" id="po-number" placeholder="Ketik untuk mencari…" autocomplete="off" />
+            <input type="text" id="po-number" placeholder="Type to search…" autocomplete="off" />
           </div>
           <div class="field-group">
             <label><i class="ti ti-calendar"></i> PO Date</label>
@@ -556,7 +706,7 @@
           <div class="field-group">
             <label><i class="ti ti-tag"></i> Brand</label>
             <select id="supplier">
-              <option value="">Semua Brand</option>
+              <option value="">All Brands</option>
               <option>KLAVUU</option><option>COSRX</option><option>ESPOIR</option>
               <option>IMFROM</option><option>MAKE PREM</option><option>MEDIHEAL</option>
               <option>PPP (PUREPAWPAW)</option><option>RATEDGREEN</option><option>SUKIN</option>
@@ -566,8 +716,8 @@
           <div class="field-group">
             <label><i class="ti ti-adjustments-horizontal"></i> Status</label>
             <select id="status-filter">
-              <option value="">Semua Status</option>
-              <option value="belum-pib">⬜ Belum PIB</option>
+              <option value="">All Statuses</option>
+              <option value="belum-pib">⬜ No PIB Yet</option>
               <option value="kurang">🔴 Kurang / Shortage</option>
               <option value="match">🟢 Match</option>
               <option value="lebih">🟠 Lebih / Excess</option>
@@ -576,22 +726,22 @@
         </div>
         <div class="form-actions">
           <button class="btn-ghost" onclick="resetSearch()"><i class="ti ti-rotate"></i> Reset</button>
-          <button class="btn-primary" onclick="doSearch()"><i class="ti ti-search"></i> Cari PO</button>
+          <button class="btn-primary" onclick="doSearch()"><i class="ti ti-search"></i> Search PO</button>
         </div>
       </div>
 
       <!-- Empty state -->
       <div class="empty-state" id="empty-state">
         <div class="empty-state-icon"><i class="ti ti-package-search"></i></div>
-        <h3>Belum ada hasil pencarian</h3>
-        <p>Gunakan filter di atas lalu klik <strong>Cari PO</strong> untuk menampilkan data.</p>
+        <h3>No search results yet</h3>
+        <p>Use the filters above, then click <strong>Search PO</strong> to show results.</p>
       </div>
 
       <!-- Results -->
       <div id="results-section" style="display:none">
         <div class="data-card">
           <div class="data-card-header">
-            <span><i class="ti ti-list-details"></i> Hasil Pencarian</span>
+            <span><i class="ti ti-list-details"></i> Search Results</span>
             <span id="result-count" class="count-badge"></span>
           </div>
           <div class="table-wrap">
@@ -604,7 +754,7 @@
                   <th>Status</th>
                   <th class="num">Qty PIB</th>
                   <th class="num">Qty WH</th>
-                  <th>Aksi</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="summary-tbody"></tbody>
@@ -615,9 +765,20 @@
         <!-- Detail Panel -->
         <div id="detail-section" style="display:none">
           <div class="detail-header">
-            <h3><i class="ti ti-file-description"></i> Detail PO</h3>
+            <h3><i class="ti ti-file-description"></i> PO Detail</h3>
+            <div style="display:flex; gap:8px; margin-left:auto">
+              <button class="btn-detail" id="detail-btn-ci" onclick="goToCiValidation(currentDetailPoNumber)" title="Verify PO — match Qty &amp; Value against the CI">
+                <i class="ti ti-file-search"></i> Verify CI (Qty &amp; Value)
+              </button>
+              <button class="btn-detail" id="detail-btn-pib" onclick="showAddPoForm(currentDetailPoNumber)" title="Update Qty PIB and Qty WH (Inbound)">
+                <i class="ti ti-truck-delivery"></i> Update PIB / Qty WH
+              </button>
+              <button class="btn-detail" id="detail-btn-log" onclick="openEditLogModal(currentDetailPoNumber)" title="View the log of who edited this PO">
+                <i class="ti ti-history"></i> Log
+              </button>
+            </div>
             <button class="btn-ghost btn-sm" onclick="closeDetail()">
-              <i class="ti ti-x"></i> Tutup
+              <i class="ti ti-x"></i> Close
             </button>
           </div>
 
@@ -638,7 +799,7 @@
                       <th class="num">Qty PO</th>
                       <th class="num">Qty PIB</th>
                       <th class="num">Qty WH</th>
-                      <th class="num">Selisih</th>
+                      <th class="num">Difference</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -647,41 +808,191 @@
               </div>
             </div>
           </div>
+
+          <div class="data-card" style="margin-top:16px">
+            <div class="data-card-header">
+              <span><i class="ti ti-history"></i> Activity Log / PO Edit History</span>
+              <span id="edit-log-count" class="count-badge"></span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr><th>Time</th><th>Edited By</th><th>Actions</th><th>Change Details</th></tr>
+                </thead>
+                <tbody id="edit-log-tbody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- ════════════════════════════════════════════
-         PAGE: CI VERIFICATION (REBUILT)
-    ════════════════════════════════════════════ -->
-    <section class="page-body" id="ci-panel" style="display:none">
+        <!-- ═══════════════════════════════════════════════════
+         PAGE: COMPARE PIB — detect a PIB PDF and compare
+         its item quantities against a PO
+    ═══════════════════════════════════════════════════ -->
+    <section class="page-body" id="pib-compare-panel" style="display:none">
 
-      <!-- STEP 1: Pilih PO -->
-      <div class="form-card" id="ci-step1-card">
+      <!-- STEP 1: Select PO -->
+      <div class="form-card" id="pib-cmp-step1-card">
         <div class="form-card-title">
           <span class="ci-step-badge">1</span>
           <i class="ti ti-file-search"></i>
-          <span>Pilih PO yang akan diverifikasi</span>
+          <span>Select the PO to compare</span>
         </div>
         <div class="form-grid-2" style="gap:16px; align-items:flex-end;">
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-search"></i> Cari No PO / Brand</label>
-            <input type="text" id="ci-po-search" placeholder="Ketik untuk filter PO..." oninput="filterCiPoList()" autocomplete="off" />
+            <label><i class="ti ti-search"></i> Search PO Number / Brand</label>
+            <input type="text" id="pib-cmp-po-search" placeholder="Type to filter PO..." oninput="filterPibComparePoList()" autocomplete="off" />
           </div>
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-list"></i> Pilih PO</label>
-            <select id="ci-po-select" onchange="selectCiPo(this.value)">
-              <option value="">— Pilih PO Number —</option>
+            <label><i class="ti ti-list"></i> Select PO</label>
+            <select id="pib-cmp-po-select" onchange="selectPibComparePo(this.value)">
+              <option value="">— Select PO Number —</option>
             </select>
           </div>
         </div>
 
-        <!-- PO Detail setelah dipilih -->
+        <div id="pib-cmp-po-detail" style="display:none; margin-top:16px;">
+          <div class="ci-po-info-bar" id="pib-cmp-po-info-bar"></div>
+          <div class="data-card" style="margin-top:12px; padding:0; overflow:hidden;">
+            <div class="data-card-header">
+              <span><i class="ti ti-package"></i> Items in this PO</span>
+              <span id="pib-cmp-po-item-count" class="count-badge"></span>
+            </div>
+            <div class="table-wrap" style="max-height:280px; overflow:auto;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Product Name</th>
+                    <th>Type</th>
+                    <th class="num">Qty PO</th>
+                  </tr>
+                </thead>
+                <tbody id="pib-cmp-po-items-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Upload PIB PDF -->
+      <div class="form-card" id="pib-cmp-step2-card" style="opacity:.5; pointer-events:none;">
+        <div class="form-card-title">
+          <span class="ci-step-badge">2</span>
+          <i class="ti ti-file-upload"></i>
+          <span>Upload PIB PDF (BC 2.0)</span>
+        </div>
+        <div class="hint-box hint-box-blue" style="margin-bottom:14px;">
+          <i class="ti ti-info-circle"></i>
+          Upload the customs PIB document (BC 2.0 form) as a PDF. The system will automatically detect each item's product name and quantity, and match them against this PO by name.
+        </div>
+        <div id="pib-cmp-drop-zone" class="pdf-drop-zone"
+             onclick="document.getElementById('pib-cmp-file-input').click()"
+             ondragover="event.preventDefault();this.classList.add('dragover')"
+             ondragleave="this.classList.remove('dragover')"
+             ondrop="handlePibCompareDrop(event)">
+          <input type="file" id="pib-cmp-file-input" accept=".pdf" style="display:none" onchange="handlePibCompareFile(this.files[0])" />
+          <div id="pib-cmp-drop-content">
+            <i class="ti ti-cloud-upload" style="font-size:32px;color:var(--c-blue);margin-bottom:8px"></i>
+            <div style="font-weight:500;margin-bottom:4px">Click or drag &amp; drop the PIB PDF here</div>
+            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf · Max 10MB</div>
+          </div>
+          <div id="pib-cmp-loading" style="display:none; flex-direction:column; align-items:center;">
+            <div class="pdf-spinner"></div>
+            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Reading the PIB PDF…</div>
+          </div>
+        </div>
+        <div id="pib-cmp-result-info" style="display:none" class="pdf-result-info">
+          <i class="ti ti-circle-check" style="color:var(--c-green)"></i>
+          <span id="pib-cmp-result-text"></span>
+          <button class="btn-ghost btn-sm" onclick="resetPibCompareUpload()"><i class="ti ti-rotate"></i> Upload again</button>
+        </div>
+      </div>
+
+      <!-- STEP 3: Comparison table -->
+      <div id="pib-cmp-compare-card" style="display:none;">
+        <div class="form-card" style="padding-bottom:6px;">
+          <div class="form-card-title" style="margin-bottom:8px;">
+            <span class="ci-step-badge">3</span>
+            <i class="ti ti-arrows-diff"></i>
+            <span>PO vs PIB Comparison</span>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+              <button class="btn-ghost btn-sm" onclick="resetPibCompareUpload()">
+                <i class="ti ti-rotate"></i> Re-upload
+              </button>
+              <button class="btn-primary btn-sm" onclick="applyPibToPo()">
+                <i class="ti ti-device-floppy"></i> Apply to PO
+              </button>
+            </div>
+          </div>
+
+          <div class="ci-po-info-bar" id="pib-cmp-detected-header" style="margin-bottom:12px;"></div>
+
+          <!-- Data source legend -->
+          <div class="hint-box" style="margin-bottom:12px;">
+            <i class="ti ti-info-circle"></i>
+            <strong>Qty PO</strong> — from the PO saved in History PO ·
+            <strong>Qty PIB</strong> — from the detected PIB PDF above ·
+            <strong>Qty WH</strong> — from Warehouse data recorded against this PO.
+          </div>
+
+          <!-- Summary strip -->
+          <div class="ci-summary-strip" id="pib-cmp-summary-strip"></div>
+
+          <div class="table-wrap" style="margin-top:12px;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>SKU (PO)</th>
+                  <th>Product Name (PO)</th>
+                  <th>Detected in PIB</th>
+                  <th class="num">Qty PO</th>
+                  <th class="num">Qty PIB</th>
+                  <th class="num">Qty WH</th>
+                  <th class="num">Difference</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="pib-cmp-compare-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+<!-- ════════════════════════════════════════════
+         PAGE: CI VERIFICATION (REBUILT)
+    ════════════════════════════════════════════ -->
+    <section class="page-body" id="ci-panel" style="display:none">
+
+      <!-- STEP 1: Select PO -->
+      <div class="form-card" id="ci-step1-card">
+        <div class="form-card-title">
+          <span class="ci-step-badge">1</span>
+          <i class="ti ti-file-search"></i>
+          <span>Select the PO to verify</span>
+        </div>
+        <div class="form-grid-2" style="gap:16px; align-items:flex-end;">
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-search"></i> Search PO Number / Brand</label>
+            <input type="text" id="ci-po-search" placeholder="Type to filter PO..." oninput="filterCiPoList()" autocomplete="off" />
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-list"></i> Select PO</label>
+            <select id="ci-po-select" onchange="selectCiPo(this.value)">
+              <option value="">— Select PO Number —</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- PO Detail after selection -->
         <div id="ci-po-detail" style="display:none; margin-top:16px;">
           <div class="ci-po-info-bar" id="ci-po-info-bar"></div>
           <div class="data-card" style="margin-top:12px; padding:0; overflow:hidden;">
             <div class="data-card-header">
-              <span><i class="ti ti-package"></i> Item dalam PO</span>
+              <span><i class="ti ti-package"></i> Items in this PO</span>
               <span id="ci-po-item-count" class="count-badge"></span>
             </div>
             <div class="table-wrap" style="max-height:280px; overflow:auto;">
@@ -689,7 +1000,7 @@
                 <thead>
                   <tr>
                     <th>SKU</th>
-                    <th>Nama Produk</th>
+                    <th>Product Name</th>
                     <th>Size</th>
                     <th>Type</th>
                     <th class="num">Qty PO</th>
@@ -707,11 +1018,11 @@
         <div class="form-card-title">
           <span class="ci-step-badge">2</span>
           <i class="ti ti-file-upload"></i>
-          <span>Upload File CI</span>
+          <span>Upload CI File</span>
         </div>
         <div class="hint-box hint-box-blue" style="margin-bottom:14px;">
           <i class="ti ti-info-circle"></i>
-          Upload file CI (Excel / CSV / PDF). Sistem akan mencocokkan SKU dari CI dengan data PO yang dipilih. Jika file punya kolom <strong>Amount / Value / Total</strong>, nilainya otomatis terbaca sebagai <strong>Value CI</strong> dan bisa langsung ditarik ke Value Reconciliation setelah verifikasi disimpan.
+          Upload the CI file (Excel / CSV / PDF). The system will match the SKUs in the CI against the selected PO's data. If the file has an <strong>Amount / Value / Total</strong> column, its value is automatically read as <strong>Value CI</strong> and can be pulled straight into Value Reconciliation once the verification is saved.
         </div>
         <div id="ci-drop-zone" class="pdf-drop-zone"
              onclick="document.getElementById('ci-file-input').click()"
@@ -721,18 +1032,18 @@
           <input type="file" id="ci-file-input" accept=".pdf,.xlsx,.xls,.csv" style="display:none" onchange="handleCiFileInput(this.files)" />
           <div id="ci-drop-content">
             <i class="ti ti-cloud-upload" style="font-size:32px;color:var(--c-blue);margin-bottom:8px"></i>
-            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop file CI di sini</div>
-            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf, .xlsx, .xls, .csv · Maks 10MB</div>
+            <div style="font-weight:500;margin-bottom:4px">Click or drag &amp; drop the CI file here</div>
+            <div style="font-size:13px;color:var(--c-text-hint)">Format: .pdf, .xlsx, .xls, .csv · Max 10MB</div>
           </div>
           <div id="ci-loading" style="display:none; flex-direction:column; align-items:center;">
             <div class="pdf-spinner"></div>
-            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Memproses file CI…</div>
+            <div style="font-size:14px;margin-top:10px;color:var(--c-blue)">Processing the CI file…</div>
           </div>
         </div>
         <div id="ci-result-info" style="display:none" class="pdf-result-info">
           <i class="ti ti-circle-check" style="color:var(--c-green)"></i>
           <span id="ci-result-text"></span>
-          <button class="btn-ghost btn-sm" onclick="resetCiUpload()"><i class="ti ti-rotate"></i> Upload lagi</button>
+          <button class="btn-ghost btn-sm" onclick="resetCiUpload()"><i class="ti ti-rotate"></i> Upload again</button>
         </div>
       </div>
 
@@ -742,15 +1053,19 @@
           <div class="form-card-title" style="margin-bottom:8px;">
             <span class="ci-step-badge">3</span>
             <i class="ti ti-arrows-diff"></i>
-            <span>Perbandingan PO vs CI</span>
+            <span>PO vs CI Comparison — Quantity &amp; Value</span>
             <div style="margin-left:auto; display:flex; gap:8px;">
               <button class="btn-ghost btn-sm" onclick="resetCiUpload()">
-                <i class="ti ti-rotate"></i> Upload ulang
+                <i class="ti ti-rotate"></i> Re-upload
               </button>
               <button class="btn-primary btn-sm" onclick="saveCiVerification()">
-                <i class="ti ti-device-floppy"></i> Simpan Verifikasi
+                <i class="ti ti-device-floppy"></i> Save Verification
               </button>
             </div>
+          </div>
+          <div class="hint-box hint-box-blue" style="margin-bottom:10px;font-size:12px;">
+            <i class="ti ti-info-circle"></i>
+            This verification already covers both <strong>Quantity</strong> (PO vs CI) and <strong>Value</strong> (PO vs CI). The <strong>Value CI</strong> column is auto-filled from the Amount/Value column in the CI file when available — otherwise, enter it manually right in the table below.
           </div>
 
           <!-- Summary strip -->
@@ -760,12 +1075,12 @@
         <!-- Comparison Table -->
         <div class="data-card" style="padding:0; overflow:hidden;">
           <div class="data-card-header">
-            <span><i class="ti ti-table"></i> Detail Perbandingan per SKU</span>
+            <span><i class="ti ti-table"></i> Comparison Detail per SKU</span>
             <div style="display:flex;gap:6px;font-size:12px;align-items:center;">
               <span class="ci-legend match">● Match</span>
-              <span class="ci-legend kurang">● Kurang</span>
-              <span class="ci-legend lebih">● Lebih</span>
-              <span class="ci-legend missing">● Tidak ada di CI</span>
+              <span class="ci-legend kurang">● Short</span>
+              <span class="ci-legend lebih">● Excess</span>
+              <span class="ci-legend missing">● Not in CI</span>
             </div>
           </div>
           <div class="table-wrap" style="overflow:auto;">
@@ -773,16 +1088,19 @@
               <thead>
                 <tr>
                   <th>SKU (PO)</th>
-                  <th>Nama Produk (PO)</th>
-                  <th>Nama Terdeteksi di CI</th>
+                  <th>Product Name (PO)</th>
+                  <th>Detected Name in CI</th>
                   <th style="width:70px">Confidence</th>
                   <th>Match Via</th>
                   <th class="num">Qty PO</th>
                   <th class="num">Qty CI</th>
-                  <th class="num" title="Value/Amount per item dari kolom Amount di file CI — dipakai otomatis di Value Reconciliation">Value CI</th>
-                  <th class="num">Selisih</th>
-                  <th>Status</th>
-                  <th style="width:38px" title="Override mapping manual"></th>
+                  <th class="num">Difference Qty</th>
+                  <th>Status Qty</th>
+                  <th class="num" title="Qty PO × Unit Price">Value PO</th>
+                  <th class="num" title="Auto-filled from the Amount/Value column in the CI file, or entered manually here">Value CI</th>
+                  <th class="num">Difference Value</th>
+                  <th>Status Value</th>
+                  <th style="width:38px" title="Manual mapping override"></th>
                 </tr>
               </thead>
               <tbody id="ci-compare-tbody"></tbody>
@@ -793,7 +1111,7 @@
         <!-- Raw CI Preview (collapsible) -->
         <details style="margin-top:12px;">
           <summary style="cursor:pointer;padding:10px 16px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius);font-size:13px;font-weight:600;color:var(--c-text-sub);">
-            <i class="ti ti-table-options"></i> Lihat Raw Data CI
+            <i class="ti ti-table-options"></i> View Raw CI Data
           </summary>
           <div class="data-card" style="padding:0; overflow:hidden; margin-top:8px; border-radius:var(--radius);">
             <div class="table-wrap" style="max-height:300px; overflow:auto;">
@@ -813,31 +1131,35 @@
     <section class="page-body" id="ci-history-panel" style="display:none">
       <div class="page-actions-row" style="margin-bottom:12px;">
         <div class="field-group" style="margin:0; max-width:320px;">
-          <input type="text" id="ci-history-search" placeholder="Cari PO / Brand..." oninput="renderCiHistory()" style="width:100%;" />
+          <input type="text" id="ci-history-search" placeholder="Search PO / Brand..." oninput="renderCiHistory()" style="width:100%;" />
         </div>
         <button class="btn-ghost btn-sm" onclick="clearAllCiHistory()" style="color:var(--c-red);">
-          <i class="ti ti-trash"></i> Hapus Semua History
+          <i class="ti ti-trash"></i> Delete All History
         </button>
       </div>
 
       <div class="data-card" style="padding:0; overflow:hidden;">
         <div class="data-card-header">
-          <span><i class="ti ti-history"></i> Riwayat Verifikasi CI</span>
+          <span><i class="ti ti-history"></i> CI Verification History</span>
           <span id="ci-history-count" class="count-badge"></span>
         </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Tanggal Verifikasi</th>
+                <th>Verification Date</th>
                 <th>PO Number</th>
                 <th>Brand</th>
                 <th>File CI</th>
                 <th class="num">Total Qty PO</th>
                 <th class="num">Total Qty CI</th>
-                <th class="num">Selisih</th>
-                <th>Hasil</th>
-                <th>Aksi</th>
+                <th class="num">Difference Qty</th>
+                <th>Qty Result</th>
+                <th class="num">Total Value PO</th>
+                <th class="num">Total Value CI</th>
+                <th class="num">Difference Value</th>
+                <th>Value Result</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="ci-history-tbody"></tbody>
@@ -849,9 +1171,9 @@
       <div id="ci-history-detail" style="display:none; margin-top:16px;">
         <div class="data-card" style="padding:0; overflow:hidden;">
           <div class="data-card-header">
-            <span><i class="ti ti-file-description"></i> Detail Verifikasi: <span id="ci-history-detail-title"></span></span>
+            <span><i class="ti ti-file-description"></i> Verification Detail: <span id="ci-history-detail-title"></span></span>
             <button class="btn-ghost btn-sm" onclick="document.getElementById('ci-history-detail').style.display='none'">
-              <i class="ti ti-x"></i> Tutup
+              <i class="ti ti-x"></i> Close
             </button>
           </div>
           <div class="table-wrap">
@@ -859,12 +1181,16 @@
               <thead>
                 <tr>
                   <th>SKU</th>
-                  <th>Nama Produk</th>
+                  <th>Product Name</th>
                   <th>Type</th>
                   <th class="num">Qty PO</th>
                   <th class="num">Qty CI</th>
-                  <th class="num">Selisih</th>
-                  <th>Status</th>
+                  <th class="num">Difference Qty</th>
+                  <th>Status Qty</th>
+                  <th class="num">Value PO</th>
+                  <th class="num">Value CI</th>
+                  <th class="num">Difference Value</th>
+                  <th>Status Value</th>
                 </tr>
               </thead>
               <tbody id="ci-history-detail-tbody"></tbody>
@@ -874,226 +1200,109 @@
       </div>
     </section>
 
-
-    <!-- ════════════════════════════════════════════
-         PAGE: VALUE RECONCILIATION
-    ════════════════════════════════════════════ -->
     <section class="page-body" id="valrecon-panel" style="display:none">
 
-      <!-- KPI Strip -->
       <div class="kpi-strip" style="margin-bottom:16px">
-        <div class="kpi-card"><div class="kpi-value" id="vr-kpi-total">0</div><div class="kpi-label">PO Direkonsiliasi</div></div>
-        <div class="kpi-card" style="border-left:3px solid #22c55e"><div class="kpi-value" id="vr-kpi-match">0</div><div class="kpi-label">Item Match</div></div>
-        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="vr-kpi-kurang">0</div><div class="kpi-label">Item Kurang (CI &lt; PO)</div></div>
-        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="vr-kpi-lebih">0</div><div class="kpi-label">Item Lebih (CI &gt; PO)</div></div>
+        <div class="kpi-card"><div class="kpi-value" id="pm-kpi-total">0</div><div class="kpi-label">Payment Proof</div></div>
+        <div class="kpi-card" style="border-left:3px solid #22c55e"><div class="kpi-value" id="pm-kpi-matched">0</div><div class="kpi-label">Matched</div></div>
+        <div class="kpi-card" style="border-left:3px solid #f97316"><div class="kpi-value" id="pm-kpi-partial">0</div><div class="kpi-label">Partial</div></div>
+        <div class="kpi-card" style="border-left:3px solid #ef4444"><div class="kpi-value" id="pm-kpi-unmatched">0</div><div class="kpi-label">Unmatched</div></div>
       </div>
 
-      <!-- STEP 1: Pilih PO -->
       <div class="form-card" style="margin-bottom:16px">
         <div class="form-card-title">
-          <span class="ci-step-badge">1</span>
-          <i class="ti ti-file-search"></i>
-          <span>Pilih PO untuk Value Reconciliation</span>
-        </div>
-        <div class="hint-box hint-box-blue" style="margin-bottom:14px">
-          <i class="ti ti-info-circle"></i>
-          Value PO diambil otomatis dari Qty PO × Harga Satuan yang diisi saat Buat PO. Isi Value CI per item untuk dibandingkan.
-        </div>
-        <div class="form-grid-2" style="gap:16px; align-items:flex-end;">
-          <div class="field-group" style="margin:0">
-            <label><i class="ti ti-search"></i> Cari No PO / Brand</label>
-            <input type="text" id="vr-po-search" placeholder="Ketik untuk filter PO..." oninput="vrFilterPoList()" autocomplete="off" />
-          </div>
-          <div class="field-group" style="margin:0">
-            <label><i class="ti ti-list"></i> Pilih PO</label>
-            <select id="vr-po-select" onchange="vrSelectPo(this.value)">
-              <option value="">— Pilih PO Number —</option>
-            </select>
-          </div>
-        </div>
-        <div id="vr-po-detail" style="display:none; margin-top:16px;">
-          <div class="ci-po-info-bar" id="vr-po-info-bar"></div>
-        </div>
-      </div>
-
-      <!-- STEP 2: Input Value CI per item & bandingkan -->
-      <div class="form-card" id="vr-step2-card" style="display:none; margin-bottom:16px">
-        <div class="form-card-title">
-          <span class="ci-step-badge">2</span>
-          <i class="ti ti-arrows-diff"></i>
-          <span>Value PO vs Value CI per Item</span>
-          <div style="margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn-ghost btn-sm" onclick="vrPullFromCi()" title="Ambil Value CI dari hasil Verifikasi CI (kolom Amount/Value pada file CI)">
-              <i class="ti ti-wand"></i> Tarik dari Verifikasi CI
-            </button>
-            <button class="btn-ghost btn-sm" onclick="vrPasteCiValues()">
-              <i class="ti ti-clipboard"></i> Isi Value CI = Value PO (contoh)
-            </button>
-            <button class="btn-primary btn-sm" onclick="vrSaveReconciliation()">
-              <i class="ti ti-device-floppy"></i> Simpan & Rekonsiliasi
-            </button>
-          </div>
-        </div>
-
-        <div class="hint-box hint-box-blue" style="margin-bottom:10px">
-          <i class="ti ti-info-circle"></i>
-          Jika PO ini sudah pernah melalui <strong>Verifikasi CI</strong> dan file CI-nya punya kolom Amount/Value, Value CI di bawah akan otomatis terisi (ditandai ikon <i class="ti ti-wand"></i>). Anda tetap bisa mengedit nilainya secara manual kapan saja.
-        </div>
-
-        <!-- Summary strip -->
-        <div class="ci-summary-strip" id="vr-summary-strip"></div>
-
-        <div class="table-wrap" style="margin-top:8px">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>SKU</th>
-                <th>Nama Produk</th>
-                <th class="num">Qty PO</th>
-                <th class="num">Harga Satuan</th>
-                <th class="num">Value PO</th>
-                <th class="num" style="width:150px">Value CI (input)</th>
-                <th class="num">Selisih</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="vr-recon-tbody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- PAYMENT PROOF MATCHING -->
-      <div class="form-card" id="vr-payment-match-card" style="margin-bottom:16px">
-        <div class="form-card-title">
           <i class="ti ti-receipt"></i>
-          <span>Deteksi Value vs Bukti Pembayaran (Payment Proof Matching)</span>
+          <span>Payment Proof Matching</span>
         </div>
         <div class="hint-box hint-box-blue" style="margin-bottom:14px">
           <i class="ti ti-info-circle"></i>
-          Masukkan nominal yang tertera di bukti pembayaran (transfer/wire). Sistem akan mencari kombinasi PO —
-          <strong>full payment (100%)</strong>, <strong>DP sebagian</strong> (mis. 50%/30%), atau <strong>gabungan beberapa PO sekaligus</strong> —
-          yang totalnya cocok dengan nominal tersebut. Pencarian hanya membandingkan PO dengan mata uang yang sama.
+          Payment proof is pulled directly from the system's data — no need to enter Value CI manually. Use the filters and search below to find a payment proof by Payment ID, PO Number, CI Number, Brand, Status, or Date.
         </div>
 
-        <div class="form-grid-2" style="gap:16px;margin-bottom:12px">
+        <div class="form-grid-3" style="gap:16px; align-items:flex-end; margin-bottom:14px;">
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-database"></i> Basis Value</label>
-            <select id="pm-basis" onchange="pmRefreshFilters()">
-              <option value="po">Value PO (dari Buat PO)</option>
-              <option value="ci">Value CI (hasil Verifikasi CI / Value Reconciliation)</option>
-            </select>
+            <label><i class="ti ti-search"></i> Search Payment / PO / CI</label>
+            <input type="text" id="pm-search" placeholder="Type a Payment ID, PO Number, or CI Number..." oninput="pmRefreshFilters()" autocomplete="off" />
           </div>
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-currency-dollar"></i> Mata Uang</label>
+            <label><i class="ti ti-currency-dollar"></i> Currency</label>
             <select id="pm-currency" onchange="pmRefreshFilters()">
-              <option value="">— Pilih Mata Uang —</option>
+              <option value="">All Currencies</option>
+            </select>
+          </div>
+          <div class="field-group" style="margin:0">
+            <label><i class="ti ti-tag"></i> Brand</label>
+            <select id="pm-brand" onchange="pmRefreshFilters()">
+              <option value="">All Brands</option>
             </select>
           </div>
         </div>
 
-        <div class="form-grid-2" style="gap:16px;margin-bottom:4px">
+        <div class="form-grid-3" style="gap:16px; align-items:flex-end; margin-bottom:14px;">
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-tag"></i> Brand (opsional)</label>
-            <select id="pm-brand">
-              <option value="">Semua Brand</option>
+            <label><i class="ti ti-filter"></i> Status</label>
+            <select id="pm-status" onchange="pmRefreshFilters()">
+              <option value="">All Statuses</option>
+              <option value="matched">Matched</option>
+              <option value="partial">Partial</option>
+              <option value="unmatched">Unmatched</option>
             </select>
           </div>
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-wallet"></i> Nilai yang Dibayarkan (dari bukti transfer)</label>
-            <input type="text" inputmode="decimal" id="pm-paid-value" placeholder="Contoh: 12500000" />
-          </div>
-        </div>
-        <div id="pm-pool-count" style="font-size:12px;color:var(--c-text-hint);margin:2px 0 14px"></div>
-
-        <div style="margin-bottom:14px">
-          <label style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:6px">Persentase DP yang Dicek</label>
-          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="100" checked> 100% (Full)</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="50" checked> 50%</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="30"> 30%</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="70"> 70%</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="25"> 25%</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" class="pm-pct-chk" value="75"> 75%</label>
-            <input type="text" id="pm-custom-pct" placeholder="Custom % (pisah koma, mis. 20,80)"
-              style="width:190px;padding:6px 8px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:12px" />
-          </div>
-        </div>
-
-        <div class="form-grid-2" style="gap:16px;margin-bottom:14px">
-          <div class="field-group" style="margin:0">
-            <label><i class="ti ti-adjustments"></i> Toleransi Selisih</label>
-            <input type="text" inputmode="decimal" id="pm-tolerance" value="1" placeholder="mis. 1" />
+            <label><i class="ti ti-calendar"></i> Payment Date</label>
+            <input type="date" id="pm-date" onchange="pmRefreshFilters()" />
           </div>
           <div class="field-group" style="margin:0">
-            <label><i class="ti ti-stack-2"></i> Maks. PO Digabung per Kombinasi</label>
-            <select id="pm-max-combo">
-              <option value="1">1 (hanya 1 PO)</option>
-              <option value="2">2</option>
-              <option value="3" selected>3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
+            <label>&nbsp;</label>
+            <button class="btn-primary btn-sm" onclick="pmRefreshFilters()" style="width:100%"><i class="ti ti-refresh"></i> Refresh</button>
           </div>
         </div>
 
-        <button class="btn-primary btn-sm" onclick="pmFindMatches()">
-          <i class="ti ti-search"></i> Cari Kombinasi yang Cocok
-        </button>
-
-        <div id="pm-results" style="margin-top:16px"></div>
+        <div id="pm-result-count" style="font-size:12px;color:var(--c-text-hint);margin:2px 0 14px"></div>
+        <div id="pm-results"></div>
       </div>
 
-      <!-- STEP 3: History Rekonsiliasi -->
-      <div class="form-card">
+      <!-- ═══════════════════════════════════════════════
+           PO Payment Status — shown when jumping in from a
+           specific PO (History PO → "Payment Proof" button).
+           Matches payment proofs strictly by PO Number and
+           tells the user whether that PO is fully paid yet.
+      ═══════════════════════════════════════════════ -->
+      <div class="form-card" id="pm-po-status-card" style="display:none; margin-bottom:16px;">
         <div class="form-card-title">
-          <i class="ti ti-history"></i>
-          <span>History Value Reconciliation</span>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" id="vr-history-search" placeholder="Cari PO / Brand…"
-              style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;min-width:180px"
-              oninput="vrFilterHistory()" />
-            <select id="vr-history-status-filter"
-              style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px"
-              onchange="vrFilterHistory()">
-              <option value="">Semua Status</option>
-              <option value="match">Match</option>
-              <option value="kurang">Kurang</option>
-              <option value="lebih">Lebih</option>
-              <option value="mixed">Mixed</option>
-            </select>
-          </div>
+          <i class="ti ti-file-invoice"></i>
+          <span>PO Payment Status</span>
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="document.getElementById('pm-po-status-card').style.display='none'">
+            <i class="ti ti-x"></i>
+          </button>
         </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>PO Number</th>
-                <th>Brand</th>
-                <th>Direkonsiliasi</th>
-                <th class="num">Total Value PO</th>
-                <th class="num">Total Value CI</th>
-                <th class="num">Selisih</th>
-                <th>Status</th>
-                <th style="width:80px"></th>
-              </tr>
-            </thead>
-            <tbody id="vr-history-tbody"><tr><td colspan="8" style="text-align:center;padding:20px;color:var(--c-text-hint)">Belum ada rekonsiliasi tersimpan.</td></tr></tbody>
-          </table>
+        <div class="hint-box hint-box-blue" style="margin-bottom:14px">
+          <i class="ti ti-info-circle"></i>
+          Matched directly by PO Number against the payment proofs sent in by the Finance team — this only checks
+          whether the PO has been paid, in full or in part.
         </div>
+        <div id="pm-po-status-content"></div>
+      </div>
+
+      <div class="form-card" id="pm-detail-card" style="display:none; margin-bottom:16px;">
+        <div class="form-card-title">
+          <i class="ti ti-eye"></i>
+          <span>Payment Proof Detail</span>
+        </div>
+        <div id="pm-detail-content"></div>
       </div>
     </section>
 
-    <!-- VR Detail Modal -->
     <div id="vr-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 16px">
       <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:900px;padding:24px;position:relative">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
           <i class="ti ti-scale" style="font-size:20px;color:var(--c-blue)"></i>
-          <h2 style="font-size:16px;font-weight:600;margin:0">Detail Value Reconciliation — PO vs CI</h2>
+          <h2 style="font-size:16px;font-weight:600;margin:0">Value Reconciliation Detail — PO vs CI</h2>
           <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="vrCloseDetail()"><i class="ti ti-x"></i></button>
         </div>
         <div id="vr-detail-content"></div>
         <div style="margin-top:16px;display:flex;justify-content:flex-end">
-          <button class="btn-ghost" onclick="vrCloseDetail()">Tutup</button>
+          <button class="btn-ghost" onclick="vrCloseDetail()">Close</button>
         </div>
       </div>
     </div>
@@ -1104,49 +1313,49 @@
       <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:820px;padding:24px;position:relative">
         <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
           <i class="ti ti-file-export" style="font-size:20px;color:var(--c-blue)"></i>
-          <h2 style="font-size:16px;font-weight:600;margin:0">Export Surat Kuasa (Word)</h2>
+          <h2 style="font-size:16px;font-weight:600;margin:0">Export Power of Attorney (Word)</h2>
           <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="closeSkExportModal()"><i class="ti ti-x"></i></button>
         </div>
         <div class="hint-box hint-box-blue" style="margin-bottom:4px">
           <i class="ti ti-sparkles"></i>
-          Field bertanda <strong>*</strong> wajib diisi. Data shipment (Vessel, BL No, Tanggal) sudah otomatis terisi — silakan lengkapi sisanya lalu klik Generate.
+          Fields marked <strong>*</strong> are required. Shipment data (Vessel, BL No, Date) is already auto-filled — please complete the rest, then click Generate.
         </div>
 
-        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-calendar"></i> Info Surat</div>
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-calendar"></i> Letter Info</div>
         <div class="form-grid-3">
-          <div class="field-group"><label>Tanggal Surat <span class="req">*</span></label><input type="text" id="sk-tanggal" placeholder="17 Juni 2026" /></div>
-          <div class="field-group"><label>No Surat — Kuasa Custom <span class="req">*</span></label><input type="text" id="sk-no-surat-custom" placeholder="SBI/IM/242/VI/2026" /></div>
-          <div class="field-group"><label>No Surat — Kuasa Pengambilan DO <span class="req">*</span></label><input type="text" id="sk-no-surat-do" placeholder="SBI/IM/241/VI/2026" /></div>
+          <div class="field-group"><label>Letter Date <span class="req">*</span></label><input type="text" id="sk-tanggal" placeholder="17 June 2026" /></div>
+          <div class="field-group"><label>Letter Number — Customs POA <span class="req">*</span></label><input type="text" id="sk-no-surat-custom" placeholder="SBI/IM/242/VI/2026" /></div>
+          <div class="field-group"><label>Letter Number — DO Pickup POA <span class="req">*</span></label><input type="text" id="sk-no-surat-do" placeholder="SBI/IM/241/VI/2026" /></div>
         </div>
 
-        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-building"></i> Pemberi Kuasa</div>
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-building"></i> Grantor</div>
         <div class="form-grid-3">
-          <div class="field-group"><label>Nama <span class="req">*</span></label><input type="text" id="sk-nama-pemberi" /></div>
-          <div class="field-group"><label>Jabatan <span class="req">*</span></label><input type="text" id="sk-jabatan-pemberi" /></div>
-          <div class="field-group"><label>Nama Perusahaan <span class="req">*</span></label><input type="text" id="sk-nama-perusahaan" /></div>
+          <div class="field-group"><label>Name <span class="req">*</span></label><input type="text" id="sk-nama-pemberi" /></div>
+          <div class="field-group"><label>Position <span class="req">*</span></label><input type="text" id="sk-jabatan-pemberi" /></div>
+          <div class="field-group"><label>Company Name <span class="req">*</span></label><input type="text" id="sk-nama-perusahaan" /></div>
           <div class="field-group"><label>NPWP <span class="req">*</span></label><input type="text" id="sk-npwp-pemberi" /></div>
           <div class="field-group"><label>Telepon <span class="req">*</span></label><input type="text" id="sk-telepon" /></div>
         </div>
         <div class="form-grid-3">
-          <div class="field-group"><label>Alamat baris 1</label><input type="text" id="sk-alamat-1" /></div>
-          <div class="field-group"><label>Alamat baris 2</label><input type="text" id="sk-alamat-2" /></div>
-          <div class="field-group"><label>Alamat baris 3</label><input type="text" id="sk-alamat-3" /></div>
+          <div class="field-group"><label>Address line 1</label><input type="text" id="sk-alamat-1" /></div>
+          <div class="field-group"><label>Address line 2</label><input type="text" id="sk-alamat-2" /></div>
+          <div class="field-group"><label>Address line 3</label><input type="text" id="sk-alamat-3" /></div>
         </div>
 
-        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-truck"></i> Penerima Kuasa (PPJK)</div>
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-truck"></i> Grantee (Customs Broker / PPJK)</div>
         <div class="form-grid-3">
-          <div class="field-group"><label>Nama Perusahaan PPJK <span class="req">*</span></label><input type="text" id="sk-nama-penerima" /></div>
+          <div class="field-group"><label>PPJK Company Name <span class="req">*</span></label><input type="text" id="sk-nama-penerima" /></div>
           <div class="field-group"><label>NPWP PPJK <span class="req">*</span></label><input type="text" id="sk-npwp-penerima" /></div>
-          <div class="field-group"><label>Pimpinan PPJK <span class="req">*</span></label><input type="text" id="sk-pimpinan-ppjk" placeholder="AGUS SALIM" /></div>
+          <div class="field-group"><label>PPJK Head <span class="req">*</span></label><input type="text" id="sk-pimpinan-ppjk" placeholder="AGUS SALIM" /></div>
         </div>
         <div class="form-grid-2">
-          <div class="field-group"><label>Alamat PPJK</label><input type="text" id="sk-alamat-penerima" /></div>
-          <div class="field-group"><label>Nama Penanda Tangan PPJK <span class="req">*</span></label><input type="text" id="sk-nama-penerima-signer" placeholder="Agus Salim" /></div>
+          <div class="field-group"><label>PPJK Address</label><input type="text" id="sk-alamat-penerima" /></div>
+          <div class="field-group"><label>PPJK Signatory Name <span class="req">*</span></label><input type="text" id="sk-nama-penerima-signer" placeholder="Agus Salim" /></div>
         </div>
 
-        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-package"></i> Data Barang / Shipment</div>
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-package"></i> Goods / Shipment Data</div>
         <div class="form-grid-3">
-          <div class="field-group"><label>BL No. &amp; Tanggal <span class="req">*</span></label><input type="text" id="sk-bl-no-tgl" placeholder="FKT211260502 & 31-05-2026" /></div>
+          <div class="field-group"><label>BL No. &amp; Date <span class="req">*</span></label><input type="text" id="sk-bl-no-tgl" placeholder="FKT211260502 & 31-05-2026" /></div>
           <div class="field-group"><label>Vessel <span class="req">*</span></label><input type="text" id="sk-vessel" /></div>
           <div class="field-group"><label>Shipper <span class="req">*</span></label><input type="text" id="sk-shipper" /></div>
           <div class="field-group"><label>Invoice No <span class="req">*</span></label><input type="text" id="sk-invoice-no" /></div>
@@ -1154,13 +1363,79 @@
           <div class="field-group"><label>Quantity <span class="req">*</span></label><input type="text" id="sk-quantity" placeholder="4 PALLETS" /></div>
         </div>
         <div class="field-group" style="margin-top:2px">
-          <label>Jenis Barang <span class="req">*</span></label>
-          <input type="text" id="sk-jenis-barang" placeholder="Nama produk-produk dalam shipment ini" />
+          <label>Type of Goods <span class="req">*</span></label>
+          <input type="text" id="sk-jenis-barang" placeholder="Product names in this shipment" />
         </div>
 
         <div class="form-actions" style="margin-top:18px">
-          <button class="btn-ghost" onclick="closeSkExportModal()"><i class="ti ti-x"></i> Batal</button>
+          <button class="btn-ghost" onclick="closeSkExportModal()"><i class="ti ti-x"></i> Cancel</button>
           <button class="btn-primary" id="sk-generate-btn" onclick="generateSuratKuasaDocx()"><i class="ti ti-file-download"></i> Generate &amp; Download Word</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ SURAT PERNYATAAN & PENGANTAR EXPORT MODAL ═══════════════ -->
+    <div id="spp-export-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 16px">
+      <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:1040px;padding:24px;position:relative">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <i class="ti ti-file-text" style="font-size:20px;color:var(--c-blue)"></i>
+          <h2 style="font-size:16px;font-weight:600;margin:0">Generate Statement &amp; Cover Letter (SKI BPOM)</h2>
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="closeSppExportModal()"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="hint-box hint-box-blue" style="margin-bottom:4px">
+          <i class="ti ti-sparkles"></i>
+          Generates two separate official documents matching the BPOM template — <strong>Surat Pengantar</strong> (request letter to BPOM) and <strong>Surat Pernyataan</strong> (statement letter). Max <strong>20 SKU</strong> per letter — rows with the same Product Name + Packaging + Value are auto-merged into one item. Fields marked <strong>*</strong> are required.
+        </div>
+
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-calendar"></i> Letter Info</div>
+        <div class="form-grid-3">
+          <div class="field-group"><label>No. Surat — Pengantar <span class="req">*</span></label><input type="text" id="spp-no-surat-pengantar" placeholder="SBI/IM/208/V/2026" /></div>
+          <div class="field-group"><label>No. Surat — Pernyataan <span class="req">*</span></label><input type="text" id="spp-no-surat-pernyataan" placeholder="SBI/IM/209/V/2026" /></div>
+          <div class="field-group"><label>Letter Date <span class="req">*</span></label><input type="text" id="spp-tanggal" placeholder="26 Mei 2026" /></div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-building"></i> Company &amp; Signatory</div>
+        <div class="form-grid-3">
+          <div class="field-group"><label>Company Name <span class="req">*</span></label><input type="text" id="spp-nama-perusahaan" /></div>
+          <div class="field-group"><label>Alamat Perusahaan <span class="req">*</span></label><input type="text" id="spp-alamat" /></div>
+          <div class="field-group"><label>No. API</label><input type="text" id="spp-no-api" placeholder="8120000930167" /></div>
+        </div>
+        <div class="form-grid-3">
+          <div class="field-group"><label>NPWP</label><input type="text" id="spp-npwp" placeholder="71.151.484.4-086.000" /></div>
+          <div class="field-group"><label>Signatory Name <span class="req">*</span></label><input type="text" id="spp-nama-penandatangan" /></div>
+          <div class="field-group"><label>Position Penandatangan <span class="req">*</span></label><input type="text" id="spp-jabatan-penandatangan" placeholder="Direktur / Regulatory Staff" /></div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-truck-delivery"></i> Produsen &amp; Eksportir <span style="font-weight:400;color:var(--c-text-hint)">(for Surat Pernyataan)</span></div>
+        <div class="form-grid-3">
+          <div class="field-group"><label>Nama Produsen</label><input type="text" id="spp-nama-produsen" placeholder="Boleh lebih dari satu, pisahkan koma" /></div>
+          <div class="field-group" style="grid-column:span 2"><label>Alamat Produsen</label><textarea id="spp-alamat-produsen" rows="2" placeholder="Bila lebih dari satu produsen, pisahkan dengan baris baru"></textarea></div>
+        </div>
+        <div class="form-grid-3">
+          <div class="field-group"><label>Nama Eksportir</label><input type="text" id="spp-nama-eksportir" /></div>
+          <div class="field-group" style="grid-column:span 2"><label>Alamat Eksportir</label><input type="text" id="spp-alamat-eksportir" /></div>
+        </div>
+
+        <div class="form-section-title" style="margin-top:14px"><i class="ti ti-list-details"></i> Product List (max 20 SKU after merge)
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="addSppRow()"><i class="ti ti-plus"></i> Add Row</button>
+        </div>
+        <div style="overflow-x:auto;border:1px solid var(--c-border);border-radius:var(--radius);">
+          <table class="data-table" style="min-width:1000px">
+            <thead>
+              <tr>
+                <th style="width:28px">No</th><th>Product Name</th><th>Packaging</th><th>No Bets</th>
+                <th>Quantity</th><th>No Invoice &amp; Tanggal</th><th>Country of Origin</th><th>No HS</th><th>Value</th><th>No NIE</th><th style="width:36px"></th>
+              </tr>
+            </thead>
+            <tbody id="spp-items-tbody"></tbody>
+          </table>
+        </div>
+        <div id="spp-merge-preview" style="margin-top:8px;font-size:12px;color:var(--c-text-hint)"></div>
+
+        <div class="form-actions" style="margin-top:18px">
+          <button class="btn-ghost" onclick="closeSppExportModal()"><i class="ti ti-x"></i> Cancel</button>
+          <button class="btn-ghost" id="spp-generate-pengantar-btn" onclick="generateSuratPengantarSkiDocx()"><i class="ti ti-file-download"></i> Generate Surat Pengantar</button>
+          <button class="btn-primary" id="spp-generate-pernyataan-btn" onclick="generateSuratPernyataanSkiDocx()"><i class="ti ti-file-download"></i> Generate Surat Pernyataan</button>
         </div>
       </div>
     </div>
@@ -1182,13 +1457,13 @@
       <div class="form-card pdf-upload-card" style="margin-bottom:16px">
         <div class="form-card-title">
           <i class="ti ti-file-upload"></i>
-          <span>Upload CI atau Surat Pengantar NIE</span>
+          <span>Upload CI or NIE Cover Letter</span>
           <span class="badge badge-blue" style="margin-left:8px;font-size:11px">AI · PDF + Excel</span>
           <span id="gdrive-status-badge" class="badge badge-gray" style="margin-left:auto;font-size:11px">● Drive</span>
         </div>
         <div class="hint-box hint-box-blue" style="margin-bottom:12px">
           <i class="ti ti-sparkles"></i>
-          Upload <strong>Commercial Invoice</strong> untuk matching NIE, atau upload <strong>Surat Pengantar NIE ke BPOM</strong> — sistem otomatis baca tabel NIE, lalu cari dan kumpulkan file-file tersebut dari Google Drive menjadi satu ZIP.
+          Upload a <strong>Commercial Invoice</strong> to match NIEs, or upload an <strong>NIE Cover Letter to BPOM</strong> — the system will automatically read the NIE table, then find and collect those files from Google Drive into a single ZIP.
         </div>
         <div id="nie-ci-drop" class="pdf-drop-zone"
           onclick="document.getElementById('nie-ci-file').click()"
@@ -1199,39 +1474,39 @@
             onchange="handleNieCiUpload(this.files[0])" />
           <div id="nie-ci-drop-content">
             <i class="ti ti-certificate" style="font-size:32px;color:var(--c-blue);margin-bottom:8px"></i>
-            <div style="font-weight:500;margin-bottom:4px">Klik atau drag &amp; drop — CI (PDF/Excel) atau Surat Pengantar NIE (PDF)</div>
+            <div style="font-weight:500;margin-bottom:4px">Click or drag &amp; drop — CI (PDF/Excel) or NIE Cover Letter (PDF)</div>
             <div style="font-size:12px;color:var(--c-text-hint);margin-top:2px">
-              <i class="ti ti-file-description" style="margin-right:4px"></i>Surat Pengantar ke BPOM: NIE dibaca dari tabel &amp; file dikumpulkan otomatis dari Drive
+              <i class="ti ti-file-description" style="margin-right:4px"></i>Cover Letter to BPOM: NIEs are read from the table &amp; files are collected automatically from Drive
             </div>
           </div>
           <div id="nie-ci-loading" style="display:none;text-align:center">
             <div class="pdf-spinner"></div>
-            <div style="font-size:13px;margin-top:10px;color:var(--c-blue)">Membaca dokumen dan mencocokkan NIE…</div>
+            <div style="font-size:13px;margin-top:10px;color:var(--c-blue)">Reading the document and matching NIEs…</div>
           </div>
         </div>
         <div id="nie-ci-result-info" style="display:none" class="pdf-result-info">
           <i class="ti ti-circle-check" style="color:var(--c-green)"></i>
           <span id="nie-ci-result-text"></span>
           <button class="btn-ghost btn-sm" onclick="document.getElementById('nie-ci-file').value='';document.getElementById('nie-ci-result-info').style.display='none';const p=document.getElementById('surat-pengantar-panel');if(p)p.remove()">
-            <i class="ti ti-rotate"></i> Upload lagi
+            <i class="ti ti-rotate"></i> Upload again
           </button>
         </div>
 
         <!-- ── Divider ── -->
         <div style="display:flex;align-items:center;gap:10px;margin:18px 0 6px">
           <div style="flex:1;height:1px;background:var(--c-border)"></div>
-          <span style="font-size:12px;color:var(--c-text-hint);white-space:nowrap;padding:0 4px">atau paste langsung</span>
+          <span style="font-size:12px;color:var(--c-text-hint);white-space:nowrap;padding:0 4px">or paste directly</span>
           <div style="flex:1;height:1px;background:var(--c-border)"></div>
         </div>
 
         <!-- ── Paste NIE Textarea ── -->
         <div>
           <label style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:6px;margin-bottom:8px">
-            <i class="ti ti-list-numbers"></i> Paste / Ketik Nomor NIE (satu per baris)
+            <i class="ti ti-list-numbers"></i> Paste / Type NIE Numbers (one per line)
           </label>
           <div style="position:relative">
             <textarea id="nie-paste-input"
-              placeholder="Paste nomor NIE di sini, contoh:&#10;NA26231200821&#10;NA26231200822&#10;NA26251201140&#10;NA26241300493&#10;..."
+              placeholder="Paste NIE numbers here, e.g.:&#10;NA26231200821&#10;NA26231200822&#10;NA26251201140&#10;NA26241300493&#10;..."
               style="width:100%;min-height:136px;padding:10px 50px 10px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-family:monospace;font-size:13px;line-height:1.8;resize:vertical;color:var(--c-text-primary);background:var(--c-surface);transition:border-color .15s;box-sizing:border-box"
               oninput="niePasteCount()"
               onfocus="this.style.borderColor='var(--c-blue)';this.style.boxShadow='0 0 0 2px rgba(59,111,232,.1)'"
@@ -1241,7 +1516,7 @@
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">
             <button class="btn-primary" onclick="niePasteProcess()" style="display:flex;align-items:center;gap:6px">
-              <i class="ti ti-search"></i> Proses &amp; Cari di Drive
+              <i class="ti ti-search"></i> Process &amp; Search in Drive
             </button>
             <button class="btn-ghost btn-sm" onclick="document.getElementById('nie-paste-input').value='';niePasteCount();document.getElementById('nie-paste-result-panel')?.remove()">
               <i class="ti ti-eraser"></i> Clear
@@ -1251,18 +1526,18 @@
         </div>
       </div>
 
-      <!-- ══ Google Drive — Kumpul File NIE Otomatis ══ -->
+      <!-- ══ Google Drive — Auto-Collect NIE Files ══ -->
       <div class="form-card" id="gdrive-panel" style="margin-bottom:16px">
         <div class="form-card-title">
           <i class="ti ti-brand-google-drive" style="color:#4285F4"></i>
-          <span>Google Drive — Kumpul File NIE Otomatis</span>
-          <span id="gdrive-status-badge-main" class="badge badge-gray" style="margin-left:8px;font-size:11px">○ Belum Login</span>
+          <span>Google Drive — Auto-Collect NIE Files</span>
+          <span id="gdrive-status-badge-main" class="badge badge-gray" style="margin-left:8px;font-size:11px">○ Not Logged In</span>
           <div style="margin-left:auto;display:flex;gap:8px">
             <button class="btn-ghost btn-sm" id="gdrive-connect-btn" onclick="gdriveLogin()">
-              <i class="ti ti-brand-google"></i> Login Google Drive
+              <i class="ti ti-brand-google"></i> Log In to Google Drive
             </button>
             <button class="btn-ghost btn-sm" id="gdrive-logout-btn" onclick="gdriveLogout()" style="display:none">
-              <i class="ti ti-logout"></i> Logout
+              <i class="ti ti-logout"></i> Log Out
             </button>
           </div>
         </div>
@@ -1271,82 +1546,82 @@
         <div style="display:flex;gap:0;margin-bottom:14px;border-radius:8px;overflow:hidden;border:1px solid var(--c-border)">
           <div style="flex:1;padding:12px 14px;background:var(--c-surface-2);text-align:center;font-size:12px;border-right:1px solid var(--c-border)">
             <div style="font-size:20px;margin-bottom:4px">📄</div>
-            <div style="font-weight:600;color:var(--c-blue-dark)">1. Upload Surat</div>
-            <div style="color:var(--c-text-hint)">Upload Surat Pengantar NIE → NIE terbaca otomatis</div>
+            <div style="font-weight:600;color:var(--c-blue-dark)">1. Upload Letter</div>
+            <div style="color:var(--c-text-hint)">Upload the NIE Cover Letter → NIEs are read automatically</div>
           </div>
           <div style="flex:1;padding:12px 14px;background:var(--c-surface-2);text-align:center;font-size:12px;border-right:1px solid var(--c-border)">
             <div style="font-size:20px;margin-bottom:4px">🔍</div>
-            <div style="font-weight:600;color:var(--c-blue-dark)">2. Cari Otomatis</div>
-            <div style="color:var(--c-text-hint)">Sistem cari semua file NIE di seluruh Google Drive</div>
+            <div style="font-weight:600;color:var(--c-blue-dark)">2. Auto-Search</div>
+            <div style="color:var(--c-text-hint)">The system searches for all NIE files across Google Drive</div>
           </div>
           <div style="flex:1;padding:12px 14px;background:var(--c-surface-2);text-align:center;font-size:12px">
             <div style="font-size:20px;margin-bottom:4px">📦</div>
             <div style="font-weight:600;color:var(--c-blue-dark)">3. Download ZIP</div>
-            <div style="color:var(--c-text-hint)">Semua file NIE dikemas jadi satu ZIP</div>
+            <div style="color:var(--c-text-hint)">All NIE files are packaged into a single ZIP</div>
           </div>
         </div>
 
         <!-- Setup notice -->
         <div id="gdrive-config-notice" style="background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:12px 14px;margin-bottom:12px;font-size:13px">
-          <div style="font-weight:600;color:#a16207;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> Setup Google Cloud (Sekali Saja)</div>
+          <div style="font-weight:600;color:#a16207;margin-bottom:6px"><i class="ti ti-alert-triangle"></i> Google Cloud Setup (One-Time)</div>
           <ol style="margin:0 0 8px 16px;color:var(--c-text-sub);line-height:1.9;font-size:12px">
-            <li>Buka <a href="https://console.cloud.google.com" target="_blank" style="color:var(--c-blue)">console.cloud.google.com</a> → buat project baru</li>
+            <li>Open <a href="https://console.cloud.google.com" target="_blank" style="color:var(--c-blue)">console.cloud.google.com</a> → create a new project</li>
             <li>Enable <strong>Google Drive API</strong></li>
-            <li>Buat <strong>OAuth 2.0 Client ID</strong> (tipe: Web App) → salin Client ID</li>
-            <li>Buat <strong>API Key</strong> → salin API Key</li>
-            <li>Isi <code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px">CLIENT_ID</code> dan <code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px">API_KEY</code> di bagian <code>GDRIVE_CONFIG</code> di <strong>app.js</strong></li>
+            <li>Create an <strong>OAuth 2.0 Client ID</strong> (type: Web App) → copy the Client ID</li>
+            <li>Create an <strong>API Key</strong> → copy the API Key</li>
+            <li>Fill in <code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px">CLIENT_ID</code> and <code style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px">API_KEY</code> in the <code>GDRIVE_CONFIG</code> section of <strong>app.js</strong></li>
           </ol>
-          <button class="btn-ghost btn-sm" onclick="this.closest('#gdrive-config-notice').style.display='none'"><i class="ti ti-x"></i> Tutup panduan ini</button>
+          <button class="btn-ghost btn-sm" onclick="this.closest('#gdrive-config-notice').style.display='none'"><i class="ti ti-x"></i> Close this guide</button>
         </div>
 
         <!-- Manual search (tersedia setelah login) — sama alurnya kayak box NIE di atas,
-             bedanya box ini bebas cari file APA SAJA (bukan cuma nomor NIE) -->
+             the difference is this box can search for ANY file (not just NIE numbers) -->
         <div id="gdrive-search-card" style="display:none">
-          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Cari Manual (File Selain NIE)</div>
+          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Manual Search (Files Other Than NIE)</div>
           <div class="hint-box hint-box-blue" style="margin-bottom:10px">
             <i class="ti ti-info-circle"></i>
-            Untuk cari file <strong>selain NIE</strong> — nama produk, nomor invoice, nama dokumen, dll. Paste banyak kata kunci sekaligus, <strong>satu per baris</strong>. Box NIE di atas khusus untuk nomor NIE saja.
+            For finding files <strong>other than NIE</strong> — product names, invoice numbers, document names, etc. Paste multiple keywords at once, <strong>one per line</strong>. The NIE box above is only for NIE numbers.
           </div>
-          <textarea id="gdrive-manual-input" rows="4" placeholder="Contoh (satu per baris):&#10;Invoice IZ-SO-25-001&#10;KEANA Rice Pack&#10;SKI BPOM Januari"
+          <textarea id="gdrive-manual-input" rows="4" placeholder="Example (one per line):&#10;Invoice IZ-SO-25-001&#10;KEANA Rice Pack&#10;SKI BPOM Januari"
             style="width:100%;padding:10px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px;font-family:inherit;resize:vertical"
             oninput="gdriveManualCount()"></textarea>
           <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 10px">
             <span id="gdrive-manual-count" style="font-size:12px;color:var(--c-text-hint)"></span>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-            <input type="text" id="gdrive-folder-input" placeholder="Nama folder atau link folder Drive (opsional)"
+            <input type="text" id="gdrive-folder-input" placeholder="Drive folder name or folder link (opsional)"
               style="flex:1;min-width:160px;padding:8px 12px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px" />
             <select id="gdrive-filetype" style="padding:8px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px">
               <option value="pdf">PDF</option>
               <option value="xlsx">Excel</option>
-              <option value="all">Semua Tipe</option>
+              <option value="all">All Types</option>
             </select>
             <button class="btn-primary btn-sm" onclick="gdriveManualSearchAndZip()">
-              <i class="ti ti-search"></i> Cari Semua
+              <i class="ti ti-search"></i> Search All
             </button>
           </div>
           <div id="gdrive-search-loading" style="display:none;padding:12px;text-align:center;color:var(--c-text-hint);font-size:13px">
-            <i class="ti ti-loader" style="animation:spin 1s linear infinite;margin-right:6px"></i>Mencari di Google Drive…
+            <i class="ti ti-loader" style="animation:spin 1s linear infinite;margin-right:6px"></i>Searching Google Drive…
           </div>
           <div id="gdrive-manual-chip-area" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 10px"></div>
           <div id="gdrive-result-count" style="font-size:12px;color:var(--c-text-hint);margin-bottom:6px"></div>
           <div id="gdrive-results">
             <div style="text-align:center;padding:24px;color:var(--c-text-hint);font-size:13px;border:1.5px dashed var(--c-border);border-radius:8px">
               <i class="ti ti-brand-google-drive" style="font-size:28px;display:block;margin-bottom:8px;color:#4285F4"></i>
-              Upload Surat Pengantar di atas untuk pencarian NIE otomatis, atau paste kata kunci di atas untuk cari file lain.
+              Upload the Cover Letter above for automatic NIE search, or paste keywords above to find other files.
             </div>
           </div>
         </div>
 
-        <!-- Login prompt (saat belum login) -->
+        <!-- Login prompt (shown when not logged in) -->
         <div id="gdrive-login-prompt" style="text-align:center;padding:28px 16px">
           <i class="ti ti-brand-google-drive" style="font-size:44px;color:#4285F4;display:block;margin-bottom:10px"></i>
-          <div style="font-size:14px;font-weight:600;margin-bottom:6px">Login untuk Mengaktifkan Pencarian Otomatis</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px">Log In to Enable Automatic Search</div>
           <div style="font-size:13px;color:var(--c-text-hint);margin-bottom:16px;max-width:400px;margin-left:auto;margin-right:auto">
-            Login sekali dengan akun Google Anda. Sistem akan bisa mencari file NIE di semua folder Drive tanpa perlu cari manual.
+            Log in once with your Google account. The system will then be able to search for NIE files across all your Drive folders without manual searching.
           </div>
           <button class="btn-primary" onclick="gdriveLogin()" style="gap:8px;font-size:14px;padding:10px 24px">
-            <i class="ti ti-brand-google"></i> Login dengan Google Drive
+            <i class="ti ti-brand-google"></i> Log In with Google Drive
           </button>
         </div>
       </div>
@@ -1355,18 +1630,18 @@
       <div class="form-card" id="nie-results-section" style="margin-bottom:16px;display:block">
         <div class="form-card-title">
           <i class="ti ti-list-check"></i>
-          <span>Hasil Matching NIE</span>
+          <span>NIE Matching Results</span>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="nie-result-filter"
               style="padding:6px 10px;border:0.5px solid var(--c-border);border-radius:var(--border-radius-md);font-size:13px"
               onchange="nieFilterResults()">
-              <option value="">Semua Status</option>
+              <option value="">All Statuses</option>
               <option value="match">✓ Match</option>
               <option value="multiple">⚠ Multiple Match</option>
               <option value="not-found">✗ Not Found</option>
             </select>
             <button class="btn-ghost btn-sm" onclick="nieCopyAllNie()">
-              <i class="ti ti-copy"></i> Copy Semua NIE
+              <i class="ti ti-copy"></i> Copy All NIEs
             </button>
             <button class="btn-ghost btn-sm" onclick="nieExportExcel()">
               <i class="ti ti-file-spreadsheet"></i> Export Excel
@@ -1378,26 +1653,26 @@
             <thead>
               <tr>
                 <th>SKU / Rev Code</th>
-                <th>Nama Produk (CI)</th>
+                <th>Product Name (CI)</th>
                 <th class="num">Qty</th>
-                <th>Nomor NIE</th>
-                <th>Nama Produk (NIE)</th>
+                <th>NIE Number</th>
+                <th>Product Name (NIE)</th>
                 <th>Status</th>
-                <th>Aksi</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="nie-result-tbody">
               <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--c-text-hint)">
                 <i class="ti ti-certificate" style="font-size:32px;display:block;margin-bottom:8px;opacity:.3"></i>
-                Upload CI di atas untuk memulai matching NIE
+                Upload a CI above to start NIE matching
               </td></tr>
             </tbody>
           </table>
         </div>
 
-        <!-- Pengaturan Matching (dipindahkan dari NIE Database) -->
+        <!-- Matching Settings (moved from NIE Database) -->
         <div style="margin-top:16px;padding:12px 14px;background:var(--c-surface-2,rgba(0,0,0,.03));border-radius:var(--border-radius-md);display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint)"><i class="ti ti-settings"></i> Pengaturan Matching</div>
+          <div style="font-size:12px;font-weight:600;color:var(--c-text-hint)"><i class="ti ti-settings"></i> Matching Settings</div>
           <div style="display:flex;align-items:center;gap:8px;font-size:13px">
             <label>Threshold Fuzzy Similarity:</label>
             <input type="number" id="nie-threshold" value="80" min="50" max="100"
@@ -1405,7 +1680,7 @@
               onchange="NIE_SETTINGS.similarity_threshold=Number(this.value)" />
             <span style="color:var(--c-text-hint)">%</span>
           </div>
-          <div style="font-size:12px;color:var(--c-text-hint)">Semakin tinggi = lebih ketat. Default: 80%</div>
+          <div style="font-size:12px;color:var(--c-text-hint)">Higher = stricter. Default: 80%</div>
         </div>
       </div>
     </section>
@@ -1415,10 +1690,55 @@
       <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:520px;padding:24px;max-height:80vh;overflow-y:auto">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
           <i class="ti ti-list-search" style="color:var(--c-blue)"></i>
-          <h3 style="font-size:15px;font-weight:600;margin:0">Pilih NIE yang Tepat</h3>
+          <h3 style="font-size:15px;font-weight:600;margin:0">Select the Correct NIE</h3>
           <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="document.getElementById('nie-candidate-modal').style.display='none'"><i class="ti ti-x"></i></button>
         </div>
         <div id="nie-candidate-content"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ USER IDENTITY MODAL (for edit-log attribution) ═══════════════ -->
+    <div id="user-identity-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;align-items:center;justify-content:center">
+      <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:380px;padding:24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <i class="ti ti-user-circle" style="font-size:20px;color:var(--c-blue)"></i>
+          <h3 id="user-identity-title" style="font-size:15px;font-weight:600;margin:0">Who are you?</h3>
+        </div>
+        <p id="user-identity-sub" style="font-size:12.5px;color:var(--c-text-hint);margin:0 0 16px">
+          This name will be recorded in the log every time you edit or verify a PO.
+        </p>
+        <div class="field-group" style="margin:0">
+          <label><i class="ti ti-signature"></i> User Name</label>
+          <input type="text" id="user-identity-input" placeholder="e.g. Nelson"
+            onkeydown="if(event.key==='Enter') saveUserIdentity();" autocomplete="off" />
+        </div>
+        <div class="form-actions" style="margin-top:16px">
+          <button class="btn-primary" style="width:100%" onclick="saveUserIdentity()">
+            <i class="ti ti-check"></i> Save &amp; Continue
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ EDIT LOG MODAL (history of who edited the PO) ═══════════════ -->
+    <div id="edit-log-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:flex-start;justify-content:center;overflow-y:auto;padding:32px 16px">
+      <div style="background:var(--c-surface);border-radius:var(--border-radius-lg);width:100%;max-width:720px;padding:24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <i class="ti ti-history" style="font-size:20px;color:var(--c-blue)"></i>
+          <h3 style="font-size:15px;font-weight:600;margin:0">Activity Log — PO <span id="edit-log-modal-po"></span></h3>
+          <button class="btn-ghost btn-sm" style="margin-left:auto" onclick="closeEditLogModal()"><i class="ti ti-x"></i></button>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>Time</th><th>Edited By</th><th>Actions</th><th>Change Details</th></tr>
+            </thead>
+            <tbody id="edit-log-modal-tbody"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:16px;display:flex;justify-content:flex-end">
+          <button class="btn-ghost" onclick="closeEditLogModal()">Close</button>
+        </div>
       </div>
     </div>
 
