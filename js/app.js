@@ -5884,31 +5884,50 @@ function updateSppMergePreview() {
     + (over ? ` <span style="color:#ef4444;font-weight:600">Melebihi maksimal ${SKI_MAX_SKU} SKU — pecah menjadi surat terpisah.</span>` : '');
 }
 
-// Shared product table — matches the official BPOM cover-letter table
-// (No, Nama Produk Yang Tertera Pada Invoice, Kemasan, No Bets, Jumlah,
-// Nomor Invoice & Tanggal, Negara Asal, No HS, Nilai/Harga Pada Invoice, No. Notifikasi).
-function skiItemsTableHtml(rows) {
-  const rowsHtml = rows.map((r, i) => `
-    <tr>
-      <td class="center">${i+1}</td>
-      <td>${r.nama}</td>
-      <td class="center">${r.kemasan||'-'}</td>
-      <td class="center">${r.noBets||'-'}</td>
-      <td class="center">${r.jumlah||'-'}</td>
-      <td>${r.noInvoice||'-'}</td>
-      <td class="center">${r.negara||'-'}</td>
-      <td class="center">${r.noHs||'-'}</td>
-      <td class="right">${r.nilai||'-'}</td>
-      <td class="center">${r.nie}</td>
-    </tr>`).join('');
-  return `
-    <table>
-      <thead><tr>
-        <th style="width:22px">No</th><th>Nama Produk Yang Tertera Pada Invoice</th><th>Kemasan</th><th>No Bets</th>
-        <th>Jumlah</th><th>Nomor Invoice &amp; Tanggal</th><th>Negara Asal</th><th>No HS</th><th>Nilai/Harga Pada Invoice</th><th>No. Notifikasi</th>
-      </tr></thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>`;
+// Real .docx template paths — upload the two template files (with {tag} placeholders,
+// generated to match the official BPOM Pengantar/Pernyataan format exactly, kop & fonts
+// included) to these paths in the project so the app can fetch & fill them.
+const SKI_TEMPLATE_PATHS = {
+  pengantar: 'templates/Template_Surat_Pengantar_SKI.docx',
+  pernyataan: 'templates/Template_Surat_Pernyataan_SKI.docx',
+};
+
+// Fetches a .docx template, fills it with docxtemplater ({tag} placeholders +
+// {#items}…{/items} row-loop for the product table), and downloads the result
+// as a real .docx (not the old HTML→.doc trick).
+async function fillDocxTemplateAndDownload(templateUrl, data, filename) {
+  let arrayBuffer;
+  try {
+    const res = await fetch(templateUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    arrayBuffer = await res.arrayBuffer();
+  } catch (err) {
+    showToast(`Template tidak ditemukan di "${templateUrl}". Pastikan file .docx template sudah diupload ke folder tersebut.`, 'error');
+    throw err;
+  }
+
+  let zip, doc;
+  try {
+    zip = new PizZip(arrayBuffer);
+    doc = new window.docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+    doc.render(data);
+  } catch (err) {
+    console.error(err);
+    const details = err?.properties?.errors?.map(e => e.properties?.explanation).filter(Boolean).join('; ');
+    showToast(`Gagal mengisi template: ${details || err.message}`, 'error');
+    throw err;
+  }
+
+  const blob = doc.getZip().generate({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename.endsWith('.docx') ? filename : filename + '.docx';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // Validates & returns the merged (max-20-SKU) rows, or null + toast on error.
@@ -5925,8 +5944,24 @@ function validateSppRows() {
   return merged;
 }
 
+// Shared: turns the merged rows into the {items} array the templates expect.
+function skiItemsForTemplate(merged) {
+  return merged.map((r, i) => ({
+    no: i + 1,
+    nama: r.nama,
+    kemasan: r.kemasan || '-',
+    noBets: r.noBets || '-',
+    jumlah: r.jumlah || '-',
+    noInvoice: r.noInvoice || '-',
+    negara: r.negara || '-',
+    noHs: r.noHs || '-',
+    nilai: r.nilai || '-',
+    nie: r.nie,
+  }));
+}
+
 // ── Surat Pengantar (permohonan SKI ke BPOM) ───────────────────────
-function generateSuratPengantarSkiDocx() {
+async function generateSuratPengantarSkiDocx() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const required = ['spp-no-surat-pengantar','spp-tanggal','spp-nama-perusahaan','spp-alamat','spp-nama-penandatangan','spp-jabatan-penandatangan'];
   const missing = required.filter(id => !v(id));
@@ -5935,51 +5970,20 @@ function generateSuratPengantarSkiDocx() {
   if (!merged) return;
 
   const data = {
-    noSurat: v('spp-no-surat-pengantar'), tanggal: v('spp-tanggal'), namaPerusahaan: v('spp-nama-perusahaan'),
-    alamat: v('spp-alamat'), namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
+    tanggal: v('spp-tanggal'), noSuratPengantar: v('spp-no-surat-pengantar'),
+    namaPerusahaan: v('spp-nama-perusahaan'), alamat: v('spp-alamat'),
+    namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
+    items: skiItemsForTemplate(merged),
   };
 
-  const body = `
-    <table style="border:none;margin-bottom:0;">
-      <tr>
-        <td style="border:none;width:60%;vertical-align:top;padding:0">
-          Kepada Yth.<br/>Direktur Pengawasan Kosmetik<br/>Badan Pengawasan Obat dan Makanan RI<br/>Jl. Percetakan Negara No 23<br/>Jakarta
-        </td>
-        <td style="border:none;width:40%;vertical-align:top;padding:0">
-          Tanggal : ${data.tanggal}<br/>Dept : Import<br/>No Surat : ${data.noSurat}
-        </td>
-      </tr>
-    </table>
-    <p style="margin-top:16px">Hal : Permohonan Surat Keterangan Impor Produk Jadi Kosmetik</p>
-    <p>Dengan Hormat,</p>
-    <p>Bersama surat ini, kami ingin mengajukan permohonan untuk mendapatkan Surat Keterangan Impor untuk produk jadi kosmetik tersebut dibawah ini :</p>
-    ${skiItemsTableHtml(merged)}
-    <ol style="margin-top:16px;padding-left:20px">
-      <li>Invoice dan packing list</li>
-      <li>Bill of Landing (B/L) atau Air Ways Bill (AWB)</li>
-      <li>Sertifikat Analisa (CoA)</li>
-      <li>Fotokopi Surat Pemberitahuan Notifikasi</li>
-      <li>Surat Perjanjian kerjasama antara importer dan pemilik nomor izin edar yang disahkan oleh notaris (bila diperlukan).</li>
-      <li>Surat Pernyataan dari pemohon (untuk produk jadi) yang menyatakan kesesuaian nama yang dicantumkan pada invoice dengan nama yang tercantum dalam izin edar</li>
-    </ol>
-    <p>Demikian permohonan ini kami ajukan, atas perhatiannya kami ucapkan terima kasih.</p>
-    <table style="border:none;margin-top:24px;">
-      <tr><td style="border:none;width:60%;"></td>
-        <td style="border:none;width:40%;">
-          <p>Hormat Kami,</p>
-          <p class="sig-name">${data.namaPenandatangan}</p>
-          <p>${data.jabatanPenandatangan} ${data.namaPerusahaan}</p>
-        </td>
-      </tr>
-    </table>
-  `;
-
-  downloadHtmlAsWord(`Surat_Pengantar_SKI_${data.noSurat.replace(/[^\w]+/g,'_')}`, body);
-  showToast('✓ Surat Pengantar SKI berhasil digenerate & diunduh (.doc)', 'success');
+  try {
+    await fillDocxTemplateAndDownload(SKI_TEMPLATE_PATHS.pengantar, data, `Surat_Pengantar_SKI_${data.noSuratPengantar.replace(/[^\w]+/g,'_')}`);
+    showToast('✓ Surat Pengantar SKI berhasil digenerate & diunduh (.docx)', 'success');
+  } catch (err) { /* toast already shown */ }
 }
 
 // ── Surat Pernyataan (untuk produk jadi) ───────────────────────────
-function generateSuratPernyataanSkiDocx() {
+async function generateSuratPernyataanSkiDocx() {
   const v = id => (document.getElementById(id)?.value || '').trim();
   const required = ['spp-no-surat-pernyataan','spp-tanggal','spp-nama-perusahaan','spp-alamat','spp-nama-penandatangan','spp-jabatan-penandatangan'];
   const missing = required.filter(id => !v(id));
@@ -5988,63 +5992,20 @@ function generateSuratPernyataanSkiDocx() {
   if (!merged) return;
 
   const data = {
-    noSurat: v('spp-no-surat-pernyataan'), tanggal: v('spp-tanggal'), namaPerusahaan: v('spp-nama-perusahaan'),
-    alamat: v('spp-alamat'), namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
-    noApi: v('spp-no-api'), npwp: v('spp-npwp'),
-    namaProdusen: v('spp-nama-produsen'), alamatProdusen: v('spp-alamat-produsen'),
-    namaEksportir: v('spp-nama-eksportir'), alamatEksportir: v('spp-alamat-eksportir'),
+    tanggal: v('spp-tanggal'), noSuratPernyataan: v('spp-no-surat-pernyataan'),
+    namaPerusahaan: v('spp-nama-perusahaan'), alamat: v('spp-alamat'),
+    alamatPenandatangan: v('spp-alamat'),
+    namaPenandatangan: v('spp-nama-penandatangan'), jabatanPenandatangan: v('spp-jabatan-penandatangan'),
+    noApi: v('spp-no-api') || '-', npwp: v('spp-npwp') || '-',
+    namaProdusen: v('spp-nama-produsen') || '-',
+    alamatProdusen: (v('spp-alamat-produsen') || '-').replace(/\n+/g, ', '),
+    namaEksportir: v('spp-nama-eksportir') || '-',
+    alamatEksportir: v('spp-alamat-eksportir') || '-',
+    items: skiItemsForTemplate(merged),
   };
-  const alamatProdusenHtml = data.alamatProdusen ? data.alamatProdusen.split('\n').filter(Boolean).join('<br/>') : '-';
 
-  const body = `
-    <table style="border:none;margin-bottom:0;">
-      <tr><td style="border:none;width:60%"></td>
-        <td style="border:none;width:40%;vertical-align:top;padding:0">
-          Tanggal : ${data.tanggal}<br/>Dept : Import<br/>No Surat : ${data.noSurat}
-        </td>
-      </tr>
-    </table>
-    <p class="bold center" style="margin:20px 0 0;font-size:13pt;">SURAT PERNYATAAN</p>
-    <p class="bold center" style="margin:0 0 16px;">(Untuk Produk Jadi)</p>
-    <p>Yang bertanda tangan dibawah ini :</p>
-    <table style="border:none;margin-bottom:12px;">
-      <tr><td style="border:none;width:120px;padding:2px 0;">Nama</td><td style="border:none;padding:2px 0;">: ${data.namaPenandatangan}</td></tr>
-      <tr><td style="border:none;padding:2px 0;">Jabatan</td><td style="border:none;padding:2px 0;">: ${data.jabatanPenandatangan} ${data.namaPerusahaan}</td></tr>
-      <tr><td style="border:none;padding:2px 0;vertical-align:top">Alamat</td><td style="border:none;padding:2px 0;">: ${data.alamat}</td></tr>
-    </table>
-    <p>Bertindak untuk dan atas nama perusahaan :</p>
-    <table style="border:none;margin-bottom:12px;">
-      <tr><td style="border:none;width:120px;padding:2px 0;">Nama</td><td style="border:none;padding:2px 0;">: ${data.namaPerusahaan}</td></tr>
-      <tr><td style="border:none;padding:2px 0;vertical-align:top">Alamat</td><td style="border:none;padding:2px 0;">: ${data.alamat}</td></tr>
-      ${data.noApi ? `<tr><td style="border:none;padding:2px 0;">No API</td><td style="border:none;padding:2px 0;">: ${data.noApi}</td></tr>` : ''}
-      ${data.npwp ? `<tr><td style="border:none;padding:2px 0;">NPWP</td><td style="border:none;padding:2px 0;">: ${data.npwp}</td></tr>` : ''}
-    </table>
-    <p>Dengan ini menyatakan bahwa:</p>
-    <p style="margin-bottom:4px">1.</p>
-    ${skiItemsTableHtml(merged)}
-    <p style="margin-top:14px">Yang diimpor melalui :</p>
-    <table style="margin-bottom:12px;">
-      <tr><td style="width:140px">Nama Produsen</td><td>: ${data.namaProdusen||'-'}</td></tr>
-      <tr><td style="vertical-align:top">Alamat Produsen</td><td>: ${alamatProdusenHtml}</td></tr>
-      <tr><td>Nama Eksportir</td><td>: ${data.namaEksportir||'-'}</td></tr>
-      <tr><td>Alamat Eksportir</td><td>: ${data.alamatEksportir||'-'}</td></tr>
-    </table>
-    <p>Adalah Produk Jadi Kosmetik yang akan didistribusikan ke wilayah Indonesia berdasarkan No. Pemberitahuan Telah dinotifikasi tersebut diatas. Nama yang tercantum pada invoice mempunyai komposisi yang sama dengan nama yang tercantum dalam Pemberitahuan Telah Dinotifikasi.</p>
-    <p>2. Dalam hal sertifikasi analisis yang dilampirkan/ diunggah tidak memuat parameter dan hasil uji sesuai ketentuan, maka kami bersedia untuk dilakukan pengambilan contoh/sampling pengujian laboratorium oleh petugas Badan POM RI, dan menanggung seluruh biaya yang diperlukan dalam pengujian tersebut, dan tidak akan mengedarkan/menjual barang tersebut sebelum mendapat persetujuan dari Badan POM RI.</p>
-    <p>3. Apabila terdapat ketidaksesuaian, maka kami bersedia untuk dilakukan tindak lanjut sesuai ketentuan perundang-undangan.</p>
-    <p>4. Apabila kami tidak memenuhi ketiga point diatas, kami bersedia dikenakan sanksi sesuai dengan ketentuan yang berlaku.</p>
-    <p>Surat pernyataan ini kami buat dengan sebenar-benarnya, apabila dikemudian hari terjadi penyimpangan, maka kami bersedia menerima sanksi sesuai dengan peraturan dan perundang-undangan yang berlaku.</p>
-    <table style="border:none;margin-top:24px;">
-      <tr><td style="border:none;width:60%;"></td>
-        <td style="border:none;width:40%;">
-          <p>Hormat Kami,</p>
-          <p class="sig-name">${data.namaPenandatangan}</p>
-          <p class="bold">${data.jabatanPenandatangan} ${data.namaPerusahaan}</p>
-        </td>
-      </tr>
-    </table>
-  `;
-
-  downloadHtmlAsWord(`Surat_Pernyataan_SKI_${data.noSurat.replace(/[^\w]+/g,'_')}`, body);
-  showToast('✓ Surat Pernyataan SKI berhasil digenerate & diunduh (.doc)', 'success');
+  try {
+    await fillDocxTemplateAndDownload(SKI_TEMPLATE_PATHS.pernyataan, data, `Surat_Pernyataan_SKI_${data.noSuratPernyataan.replace(/[^\w]+/g,'_')}`);
+    showToast('✓ Surat Pernyataan SKI berhasil digenerate & diunduh (.docx)', 'success');
+  } catch (err) { /* toast already shown */ }
 }

@@ -154,6 +154,28 @@ const MOCK_PO_DATA = [
       { sku: "RG.HC-GRACPAODCHMM200S",      name: "GWP Real Argan Cold Pressed Argan Oil Deep Conditioning Hair Mask", size: "200 ml", type: "GWP", qtyPO: 36,   qtyPIB: 36,   qtyWarehouse: 36,   unitPrice: 0.00,    discountPct: 0,   netPrice: 0.00 },
       { sku: "RG.HC-GRPCPUPCPSM80ALLS",     name: "GWP Real Prune Cold Pressed & Upcycled Prune Color Protecting Spray", size: "80 ml", type: "GWP", qtyPO: 40,   qtyPIB: 40,   qtyWarehouse: 40,   unitPrice: 0.00,    discountPct: 0,   netPrice: 0.00 },
     ]
+  },
+  // ── Demo #5: KEANA — separate USD PO, paid in 2 installments (DP + Pelunasan) → Fully Paid ──
+  // Payment term per PO: 50% DP before shipment + 50% Pelunasan after ETA.
+  // Both installments have been paid (see MOCK_PAYMENT_PROOFS below), so
+  // Total Paid == PO Value and this PO shows up as "Fully Paid".
+  {
+    poNumber:      "PO/SBI/2026/00005010",
+    poDate:        "2026-05-01",
+    supplier:      "ISHIZAWA LABORATORIES INC.",
+    supplierLabel: "KEANA",
+    revCode:       "-",
+    pibNumber:     "390210",
+    pibDate:       "2026-06-10",
+    currency:      "USD",
+    status:        "match",
+    qtyPIB:        4200,
+    qtyWarehouse:  4200,
+    poValue:       8400.00,
+    paidAmount:    8400.00,
+    items: [
+      { sku: "KAN.SC-KRMTS100ALL1", name: "KEANA Rice Mask (Travel Set)", qtyPO: 4200, qtyPIB: 4200, qtyWarehouse: 4200, unitPrice: 2.00, netPrice: 8400.00 },
+    ]
   }
 ];
 
@@ -195,6 +217,40 @@ const MOCK_PAYMENT_PROOFS = [
     note: "50% advance payment, per the CI payment term (50% in advance, 50% within 60 days after ETA) — sent in by the Finance team.",
     attachment: "assets/payment-proofs/ratedgreen-dp1.png",
     attachmentLabel: "BCA Transfer Receipt — DP 50% (Rated Green)"
+  },
+  // ── Demo #5: KEANA — 2 installments on the same PO → Fully Paid ──
+  // DP 50% (Termin 1 of 2) sent 15-May-2026, Pelunasan 50% (Termin 2 of 2)
+  // sent 05-Jun-2026. Together they equal the full PO Value (USD 8,400.00),
+  // so this PO shows "Fully Paid" once both proofs are matched against it.
+  {
+    paymentId: "PP-2026-401",
+    poNumber: "PO/SBI/2026/00005010",
+    ciNumber: "-",
+    brand: "KEANA",
+    currency: "USD",
+    amount: 4200.00,
+    paymentDate: "2026-05-15",
+    bank: "BCA",
+    status: "matched",
+    termLabel: "DP 50% (Termin 1 of 2)",
+    note: "50% down payment, per the PO payment term (DP 50% + Pelunasan 50%) — sent in by the Finance team.",
+    attachment: "assets/payment-proofs/keana-dp1.png",
+    attachmentLabel: "BCA Transfer Receipt — DP 50% (KEANA)"
+  },
+  {
+    paymentId: "PP-2026-402",
+    poNumber: "PO/SBI/2026/00005010",
+    ciNumber: "-",
+    brand: "KEANA",
+    currency: "USD",
+    amount: 4200.00,
+    paymentDate: "2026-06-05",
+    bank: "BCA",
+    status: "matched",
+    termLabel: "Pelunasan 50% (Termin 2 of 2)",
+    note: "Final 50% settlement, completing payment for this PO — sent in by the Finance team.",
+    attachment: "assets/payment-proofs/keana-dp2.png",
+    attachmentLabel: "BCA Transfer Receipt — Pelunasan 50% (KEANA)"
   }
 ];
 
